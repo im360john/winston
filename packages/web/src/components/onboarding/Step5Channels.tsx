@@ -16,7 +16,10 @@ export default function Step5Channels({
   const toggleChannel = (channel: keyof NonNullable<OnboardingData['channels']>) => {
     updateData({
       channels: {
-        ...data.channels,
+        telegram: data.channels?.telegram || false,
+        slack: data.channels?.slack || false,
+        whatsapp: data.channels?.whatsapp || false,
+        webchat: data.channels?.webchat || false,
         [channel]: !data.channels?.[channel],
       }
     })
