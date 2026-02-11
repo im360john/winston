@@ -11,7 +11,10 @@ const { provisionToRailway } = require('../services/railway-provisioner');
 // Use DATABASE_URL from environment (Railway) or fallback to localhost
 const pool = new Pool(
   process.env.DATABASE_URL
-    ? { connectionString: process.env.DATABASE_URL }
+    ? {
+        connectionString: process.env.DATABASE_URL,
+        ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+      }
     : {
         host: 'localhost',
         database: 'winston',
