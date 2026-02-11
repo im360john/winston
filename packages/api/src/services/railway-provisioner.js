@@ -33,10 +33,16 @@ async function provisionToRailway(tenant, configs) {
     // Step 2: Create service
     const serviceId = await createService(projectId, tenant);
 
-    // Step 3: Set environment variables
+    // Step 3: Create volume for configs
+    const volumeId = await createVolume(projectId, serviceId);
+
+    // Step 4: Upload config files to volume
+    await uploadConfigs(projectId, serviceId, volumeId, configs);
+
+    // Step 5: Set environment variables
     await setEnvironmentVariables(projectId, serviceId, tenant, configs);
 
-    // Step 4: Deploy OpenClaw image
+    // Step 6: Deploy OpenClaw image
     const deployment = await deployImage(projectId, serviceId);
 
     // Step 5: Get public URL
@@ -141,6 +147,76 @@ async function createService(projectId, tenant) {
 }
 
 /**
+ * Create a volume for the service
+ */
+async function createVolume(projectId, serviceId) {
+  const mutation = `
+    mutation {
+      volumeCreate(input: {
+        projectId: "${projectId}",
+        serviceId: "${serviceId}",
+        name: "openclaw-data",
+        mountPath: "/home/node/.openclaw"
+      }) {
+        id
+        name
+      }
+    }
+  `;
+
+  try {
+    const response = await railwayRequest(mutation);
+    const volumeId = response.data.volumeCreate.id;
+    console.log(`[Railway] Created volume: ${volumeId}`);
+    return volumeId;
+  } catch (error) {
+    console.log(`[Railway] Volume creation failed (may already exist): ${error.message}`);
+    return null; // Volume might already exist
+  }
+}
+
+/**
+ * Upload config files to Railway volume
+ * Note: Railway doesn't have a direct file upload API
+ * Workaround: Encode configs as environment variables and write them on startup
+ */
+async function uploadConfigs(projectId, serviceId, volumeId, configs) {
+  console.log('[Railway] Encoding configs as environment variables...');
+
+  // Encode each config file as base64 and set as env var
+  const configVars = {
+    WINSTON_OPENCLAW_JSON: Buffer.from(configs['openclaw.json']).toString('base64'),
+    WINSTON_SOUL_MD: Buffer.from(configs['SOUL.md']).toString('base64'),
+    WINSTON_AGENTS_MD: Buffer.from(configs['AGENTS.md']).toString('base64'),
+    WINSTON_USER_MD: Buffer.from(configs['USER.md']).toString('base64'),
+    WINSTON_IDENTITY_MD: Buffer.from(configs['IDENTITY.md']).toString('base64')
+  };
+
+  // Get environment ID
+  const envId = await getEnvironmentId(projectId);
+
+  // Set config environment variables
+  for (const [key, value] of Object.entries(configVars)) {
+    const mutation = `
+      mutation {
+        variableUpsert(input: {
+          projectId: "${projectId}",
+          environmentId: "${envId}",
+          serviceId: "${serviceId}",
+          name: "${key}",
+          value: "${value}"
+        })
+      }
+    `;
+
+    await railwayRequest(mutation);
+  }
+
+  console.log('[Railway] Config files encoded in environment variables');
+  console.log('[Railway] Container will decode and write on startup');
+}
+
+/**
  * Set environment variables for the service
  */
 async function setEnvironmentVariables(projectId, serviceId, tenant, configs) {
@@ -154,17 +230,19 @@ async function setEnvironmentVariables(projectId, serviceId, tenant, configs) {
     WINSTON_TIER: tenant.tier
   };
 
+  // Get environment ID (use production environment)
+  const envId = await getEnvironmentId(projectId);
+
   for (const [key, value] of Object.entries(variables)) {
     const mutation = `
       mutation {
         variableUpsert(input: {
           projectId: "${projectId}",
+          environmentId: "${envId}",
           serviceId: "${serviceId}",
           name: "${key}",
           value: "${value}"
-        }) {
-          id
-        }
+        })
       }
     `;
 
@@ -177,26 +255,58 @@ async function setEnvironmentVariables(projectId, serviceId, tenant, configs) {
 }
 
 /**
- * Deploy the OpenClaw image
+ * Get production environment ID for a project
  */
-async function deployImage(projectId, serviceId) {
-  const mutation = `
-    mutation {
-      serviceInstanceDeploy(input: {
-        serviceId: "${serviceId}",
-        environmentId: "${projectId}"
-      }) {
-        id
-        status
+async function getEnvironmentId(projectId) {
+  const query = `
+    query {
+      project(id: "${projectId}") {
+        environments {
+          edges {
+            node {
+              id
+              name
+            }
+          }
+        }
       }
     }
   `;
 
-  const response = await railwayRequest(mutation);
-  const deployment = response.data.serviceInstanceDeploy;
+  const response = await railwayRequest(query);
+  const environments = response.data.project.environments.edges;
 
-  console.log(`[Railway] Deployment started: ${deployment.id}`);
-  return deployment;
+  // Find production environment or use first one
+  const prodEnv = environments.find(e => e.node.name === 'production');
+  const envId = prodEnv ? prodEnv.node.id : environments[0].node.id;
+
+  console.log(`[Railway] Using environment: ${envId}`);
+  return envId;
+}
+
+/**
+ * Deploy the OpenClaw image
+ */
+async function deployImage(projectId, serviceId) {
+  // Get environment ID
+  const envId = await getEnvironmentId(projectId);
+
+  const mutation = `
+    mutation {
+      serviceInstanceDeploy(
+        serviceId: "${serviceId}",
+        environmentId: "${envId}"
+      )
+    }
+  `;
+
+  const response = await railwayRequest(mutation);
+  console.log(`[Railway] Deployment triggered`);
+
+  return {
+    id: 'deployment-triggered',
+    status: 'deploying'
+  };
 }
 
 /**
@@ -204,31 +314,26 @@ async function deployImage(projectId, serviceId) {
  */
 async function getServiceUrl(projectId, serviceId) {
   // Railway will auto-generate a URL
-  // Format: service-name.up.railway.app
+  // For now, return placeholder - actual URL available in Railway dashboard
 
   const query = `
     query {
       service(id: "${serviceId}") {
         id
         name
-        domains {
-          id
-          domain
-        }
       }
     }
   `;
 
-  const response = await railwayRequest(query);
-  const service = response.data.service;
-
-  if (service.domains && service.domains.length > 0) {
-    return `https://${service.domains[0].domain}`;
+  try {
+    const response = await railwayRequest(query);
+    const serviceName = response.data.service.name;
+    // Railway auto-generates URLs like: project-name-production.up.railway.app
+    return `https://${serviceName}-production.up.railway.app`;
+  } catch (error) {
+    console.log(`[Railway] Could not get service URL: ${error.message}`);
+    return `https://railway.app/project/${projectId}`;
   }
-
-  // Generate expected URL
-  const serviceName = service.name;
-  return `https://${serviceName}.up.railway.app`;
 }
 
 /**

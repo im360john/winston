@@ -36,16 +36,24 @@ async function generateTenantConfig(tenant, options = {}) {
   // Substitute variables in openclaw.json
   let openclawConfig = JSON.stringify(baseConfig, null, 2);
 
+  // Ensure all channel properties exist
+  const channelsWithDefaults = {
+    telegram: channels.telegram || false,
+    slack: channels.slack || false,
+    whatsapp: channels.whatsapp || false,
+    webchat: channels.webchat !== false // default true
+  };
+
   const variables = {
     '{{TENANT_ID}}': tenant.id,
     '{{TIER}}': tenant.tier,
     '{{GATEWAY_TOKEN}}': gatewayToken,
     '{{LLM_PROXY_URL}}': process.env.LLM_PROXY_URL || 'http://localhost:3002',
     '{{SELECTED_MODEL}}': tenant.selected_model || 'kimi-k2.5',
-    '"{{TELEGRAM_ENABLED}}"': channels.telegram.toString(),
+    '"{{TELEGRAM_ENABLED}}"': channelsWithDefaults.telegram.toString(),
     '{{TELEGRAM_BOT_TOKEN}}': telegramBotToken || '',
-    '"{{SLACK_ENABLED}}"': channels.slack.toString(),
-    '"{{WHATSAPP_ENABLED}}"': channels.whatsapp.toString()
+    '"{{SLACK_ENABLED}}"': channelsWithDefaults.slack.toString(),
+    '"{{WHATSAPP_ENABLED}}"': channelsWithDefaults.whatsapp.toString()
   };
 
   for (const [key, value] of Object.entries(variables)) {
