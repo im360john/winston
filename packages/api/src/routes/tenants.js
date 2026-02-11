@@ -299,4 +299,33 @@ router.get('/:id/health', async (req, res, next) => {
   }
 });
 
+/**
+ * DELETE /api/tenants/:id
+ * Delete a tenant
+ */
+router.delete('/:id', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    // Check if tenant exists
+    const checkResult = await pool.query(
+      'SELECT id FROM tenants WHERE id = $1',
+      [id]
+    );
+
+    if (checkResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+
+    // Delete tenant (cascade will delete related records)
+    await pool.query('DELETE FROM tenants WHERE id = $1', [id]);
+
+    console.log(`[API] Deleted tenant ${id}`);
+
+    res.json({ message: 'Tenant deleted successfully' });
+  } catch (error) {
+    next(error);
+  }
+});
+
 module.exports = router;
