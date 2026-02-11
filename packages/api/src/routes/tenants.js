@@ -8,13 +8,18 @@ const { Pool } = require('pg');
 const { generateTenantConfig } = require('../services/config-generator');
 const { provisionToRailway } = require('../services/railway-provisioner');
 
-const pool = new Pool({
-  host: 'localhost',
-  database: 'winston',
-  user: 'winston',
-  password: 'winston',
-  port: 5432
-});
+// Use DATABASE_URL from environment (Railway) or fallback to localhost
+const pool = new Pool(
+  process.env.DATABASE_URL
+    ? { connectionString: process.env.DATABASE_URL }
+    : {
+        host: 'localhost',
+        database: 'winston',
+        user: 'winston',
+        password: 'winston',
+        port: 5432
+      }
+);
 
 /**
  * GET /api/tenants

@@ -9,16 +9,26 @@ let pool;
 
 function getDb() {
   if (!pool) {
-    pool = new Pool({
-      host: 'localhost',
-      database: 'winston',
-      user: 'winston',
-      password: 'winston',
-      port: 5432,
-      max: 20,
-      idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 2000,
-    });
+    // Use DATABASE_URL from environment (Railway) or fallback to localhost
+    const config = process.env.DATABASE_URL
+      ? {
+          connectionString: process.env.DATABASE_URL,
+          max: 20,
+          idleTimeoutMillis: 30000,
+          connectionTimeoutMillis: 2000,
+        }
+      : {
+          host: 'localhost',
+          database: 'winston',
+          user: 'winston',
+          password: 'winston',
+          port: 5432,
+          max: 20,
+          idleTimeoutMillis: 30000,
+          connectionTimeoutMillis: 2000,
+        };
+
+    pool = new Pool(config);
 
     pool.on('error', (err) => {
       console.error('[Proxy DB] Unexpected error on idle client', err);
