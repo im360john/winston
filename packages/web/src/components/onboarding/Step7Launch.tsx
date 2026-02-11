@@ -8,6 +8,13 @@ import type { OnboardingData } from '@/app/onboarding/page'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'
 
+// Stripe Price IDs for each tier
+const PRICE_IDS = {
+  free: 'price_1SzmQMLW1QhY1aU5dfxxgBW3',
+  starter: 'price_1SzmQaLW1QhY1aU5eJmM4Vg9',
+  growth: 'price_1SzmQlLW1QhY1aU5JKyFWgot',
+}
+
 const MODELS = [
   {
     id: 'kimi-k2.5',
@@ -75,7 +82,33 @@ export default function Step7Launch({
 
       const tenantId = tenantResponse.data.tenant.id
 
-      // Step 2: Create user account
+      // Step 2: Create Stripe customer
+      setProgress(prev => [...prev, 'Setting up payment...'])
+      const customerResponse = await axios.post(`${API_URL}/api/stripe/create-customer`, {
+        email: data.email,
+        paymentMethodId: data.paymentMethodId,
+        name: data.businessName,
+      })
+
+      const customerId = customerResponse.data.customerId
+
+      // Step 3: Create Stripe subscription
+      const priceId = PRICE_IDS[data.tier as keyof typeof PRICE_IDS]
+      const subscriptionResponse = await axios.post(`${API_URL}/api/stripe/create-subscription`, {
+        customerId: customerId,
+        priceId: priceId,
+        tenantId: tenantId,
+      })
+
+      const subscriptionId = subscriptionResponse.data.subscriptionId
+
+      // Step 4: Update tenant with Stripe IDs
+      await axios.patch(`${API_URL}/api/tenants/${tenantId}`, {
+        stripe_customer_id: customerId,
+        stripe_subscription_id: subscriptionId,
+      })
+
+      // Step 5: Create user account
       setProgress(prev => [...prev, 'Creating your account...'])
       await axios.post(`${API_URL}/api/auth/signup`, {
         email: data.email,
@@ -84,7 +117,7 @@ export default function Step7Launch({
         tenantId: tenantId,
       })
 
-      // Step 3: Sign in the user
+      // Step 6: Sign in the user
       setProgress(prev => [...prev, 'Signing you in...'])
       await signIn('credentials', {
         email: data.email,
@@ -92,7 +125,7 @@ export default function Step7Launch({
         redirect: false,
       })
 
-      // Step 4: Provision to Railway
+      // Step 7: Provision to Railway
       setProgress(prev => [...prev, 'Generating configs...'])
       await new Promise(resolve => setTimeout(resolve, 1000))
 
@@ -114,11 +147,11 @@ export default function Step7Launch({
         }
       )
 
-      // Step 5: Connect channels
+      // Step 8: Connect channels
       setProgress(prev => [...prev, 'Connecting channels...'])
       await new Promise(resolve => setTimeout(resolve, 1000))
 
-      // Step 6: Done!
+      // Step 9: Done!
       setProgress(prev => [...prev, `${data.agentName} is live! 🎉`])
       await new Promise(resolve => setTimeout(resolve, 1500))
 
