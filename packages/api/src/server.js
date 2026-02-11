@@ -20,12 +20,20 @@ const tenantsRouter = require('./routes/tenants');
 const healthRouter = require('./routes/health');
 const websiteRouter = require('./routes/website');
 const authRouter = require('./routes/auth');
+const stripeRouter = require('./routes/stripe');
+const stripeWebhookRouter = require('./routes/stripe-webhook');
 
 const app = express();
 const PORT = process.env.PORT || process.env.WINSTON_API_PORT || 3001;
 
 // Middleware
 app.use(cors());
+
+// IMPORTANT: Stripe webhook MUST come before express.json()
+// because it needs the raw request body for signature verification
+app.use('/api/stripe/webhook', stripeWebhookRouter);
+
+// All other routes use JSON
 app.use(express.json());
 
 // Request logging
@@ -39,6 +47,7 @@ app.use('/api/health', healthRouter);
 app.use('/api/auth', authRouter);
 app.use('/api/tenants', tenantsRouter);
 app.use('/api/website', websiteRouter);
+app.use('/api/stripe', stripeRouter);
 
 // Error handling
 app.use((err, req, res, next) => {
