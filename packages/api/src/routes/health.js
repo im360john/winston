@@ -6,13 +6,21 @@ const express = require('express');
 const router = express.Router();
 const { Pool } = require('pg');
 
-const pool = new Pool({
-  host: 'localhost',
-  database: 'winston',
-  user: 'winston',
-  password: 'winston',
-  port: 5432
-});
+// Use DATABASE_URL from environment (Railway) or fallback to localhost
+const pool = new Pool(
+  process.env.DATABASE_URL
+    ? {
+        connectionString: process.env.DATABASE_URL,
+        ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+      }
+    : {
+        host: 'localhost',
+        database: 'winston',
+        user: 'winston',
+        password: 'winston',
+        port: 5432
+      }
+);
 
 router.get('/', async (req, res) => {
   try {
