@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import axios from 'axios'
 import { useRouter } from 'next/navigation'
+import { signIn } from 'next-auth/react'
 import type { OnboardingData } from '@/app/onboarding/page'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'
@@ -74,7 +75,24 @@ export default function Step7Launch({
 
       const tenantId = tenantResponse.data.tenant.id
 
-      // Step 2: Provision to Railway
+      // Step 2: Create user account
+      setProgress(prev => [...prev, 'Creating your account...'])
+      await axios.post(`${API_URL}/api/auth/signup`, {
+        email: data.email,
+        password: data.password,
+        name: data.businessName,
+        tenantId: tenantId,
+      })
+
+      // Step 3: Sign in the user
+      setProgress(prev => [...prev, 'Signing you in...'])
+      await signIn('credentials', {
+        email: data.email,
+        password: data.password,
+        redirect: false,
+      })
+
+      // Step 4: Provision to Railway
       setProgress(prev => [...prev, 'Generating configs...'])
       await new Promise(resolve => setTimeout(resolve, 1000))
 
@@ -96,15 +114,15 @@ export default function Step7Launch({
         }
       )
 
-      // Step 3: Connect channels
+      // Step 5: Connect channels
       setProgress(prev => [...prev, 'Connecting channels...'])
       await new Promise(resolve => setTimeout(resolve, 1000))
 
-      // Step 4: Done!
+      // Step 6: Done!
       setProgress(prev => [...prev, `${data.agentName} is live! 🎉`])
       await new Promise(resolve => setTimeout(resolve, 1500))
 
-      // Redirect to dashboard
+      // Redirect to dashboard (user is now authenticated)
       router.push(`/dashboard?tenant=${tenantId}`)
 
     } catch (err) {

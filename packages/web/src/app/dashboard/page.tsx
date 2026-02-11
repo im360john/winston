@@ -1,12 +1,36 @@
 'use client'
 
-import { useSearchParams } from 'next/navigation'
-import { useState, Suspense } from 'react'
+import { useSearchParams, useRouter } from 'next/navigation'
+import { useState, Suspense, useEffect } from 'react'
+import { useSession, signOut } from 'next-auth/react'
 
 function DashboardContent() {
+  const { data: session, status } = useSession()
+  const router = useRouter()
   const searchParams = useSearchParams()
-  const tenantId = searchParams.get('tenant')
+  const tenantId = searchParams.get('tenant') || (session?.user as any)?.tenantId
   const [activeTab, setActiveTab] = useState<'chat' | 'history' | 'credits' | 'channels' | 'connectors' | 'settings'>('chat')
+
+  // Redirect to login if not authenticated
+  useEffect(() => {
+    if (status === 'unauthenticated') {
+      router.push('/login')
+    }
+  }, [status, router])
+
+  if (status === 'loading') {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-lg font-semibold text-gray-700">Loading...</div>
+        </div>
+      </div>
+    )
+  }
+
+  if (!session) {
+    return null
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -18,7 +42,7 @@ function DashboardContent() {
               A
             </div>
             <div>
-              <h1 className="text-xl font-bold">Your Agent</h1>
+              <h1 className="text-xl font-bold">{session.user?.name || 'Your Agent'}</h1>
               <div className="flex items-center gap-4 text-sm">
                 <span className="flex items-center gap-1">
                   <span className="w-2 h-2 bg-green-500 rounded-full"></span>
@@ -29,9 +53,17 @@ function DashboardContent() {
               </div>
             </div>
           </div>
-          <button className="p-2 text-gray-600 hover:text-gray-900">
-            ⚙ Settings
-          </button>
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => signOut({ callbackUrl: '/login' })}
+              className="px-4 py-2 text-sm text-gray-700 hover:text-gray-900"
+            >
+              Sign Out
+            </button>
+            <button className="p-2 text-gray-600 hover:text-gray-900">
+              ⚙ Settings
+            </button>
+          </div>
         </div>
       </header>
 

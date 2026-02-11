@@ -19,6 +19,7 @@ const cors = require('cors');
 const tenantsRouter = require('./routes/tenants');
 const healthRouter = require('./routes/health');
 const websiteRouter = require('./routes/website');
+const authRouter = require('./routes/auth');
 
 const app = express();
 const PORT = process.env.PORT || process.env.WINSTON_API_PORT || 3001;
@@ -35,6 +36,7 @@ app.use((req, res, next) => {
 
 // Routes
 app.use('/api/health', healthRouter);
+app.use('/api/auth', authRouter);
 app.use('/api/tenants', tenantsRouter);
 app.use('/api/website', websiteRouter);
 
