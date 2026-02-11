@@ -71,13 +71,7 @@ function AccountForm({
     setError('')
 
     try {
-      // For free tier or if card not required, skip payment setup
-      if (selectedTier.priceNum === 0) {
-        onNext()
-        return
-      }
-
-      // Create payment method with Stripe
+      // Create payment method with Stripe (required for all tiers)
       if (!stripe || !elements) {
         throw new Error('Stripe not loaded')
       }
@@ -196,38 +190,38 @@ function AccountForm({
         </div>
       </div>
 
-      {/* Card Input (if not free tier) */}
-      {selectedTier.priceNum > 0 && (
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Payment Method
-          </label>
-          <p className="text-xs text-gray-500 mb-2">
-            Card required for all plans to prevent abuse. You won't be charged until your free trial ends.
-          </p>
-          <div className="p-4 border border-gray-300 rounded-lg">
-            <CardElement
-              options={{
-                style: {
-                  base: {
-                    fontSize: '16px',
-                    color: '#424770',
-                    '::placeholder': {
-                      color: '#aab7c4',
-                    },
-                  },
-                  invalid: {
-                    color: '#9e2146',
+      {/* Card Input (required for all tiers) */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">
+          Payment Method
+        </label>
+        <p className="text-xs text-gray-500 mb-2">
+          {selectedTier.priceNum === 0
+            ? 'Card required for all plans to prevent abuse. You will not be charged on the free plan.'
+            : 'Card required. You won\'t be charged until your free trial ends.'}
+        </p>
+        <div className="p-4 border border-gray-300 rounded-lg">
+          <CardElement
+            options={{
+              style: {
+                base: {
+                  fontSize: '16px',
+                  color: '#424770',
+                  '::placeholder': {
+                    color: '#aab7c4',
                   },
                 },
-              }}
-            />
-          </div>
-          <p className="text-xs text-gray-500 mt-2">
-            Powered by Stripe
-          </p>
+                invalid: {
+                  color: '#9e2146',
+                },
+              },
+            }}
+          />
         </div>
-      )}
+        <p className="text-xs text-gray-500 mt-2">
+          Powered by Stripe
+        </p>
+      </div>
 
       {/* Error */}
       {error && (
