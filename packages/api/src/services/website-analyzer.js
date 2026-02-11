@@ -121,8 +121,13 @@ If information is not available, use null. Be concise and accurate.`;
   try {
     // Call LLM proxy with Claude Sonnet (using Winston's proxy for metering)
     const proxyUrl = process.env.LLM_PROXY_URL || 'http://localhost:3002';
+    const fullUrl = `${proxyUrl}/v1/messages`;
+
+    console.log('[Website Analyzer] Using proxy URL:', proxyUrl);
+    console.log('[Website Analyzer] Full URL:', fullUrl);
+
     const response = await axios.post(
-      `${proxyUrl}/v1/messages`,
+      fullUrl,
       {
         messages: [
           {
@@ -153,6 +158,13 @@ If information is not available, use null. Be concise and accurate.`;
     return analysis;
 
   } catch (error) {
+    console.error('[Website Analyzer] Error:', error);
+    console.error('[Website Analyzer] Error details:', {
+      message: error.message,
+      code: error.code,
+      response: error.response?.data
+    });
+
     if (error.response?.status === 402) {
       throw new Error('System credits exhausted - cannot analyze website');
     }
