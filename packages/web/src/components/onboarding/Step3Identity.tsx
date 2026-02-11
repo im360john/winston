@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect } from 'react'
 import type { OnboardingData } from '@/app/onboarding/page'
 
 export default function Step3Identity({
@@ -13,6 +14,15 @@ export default function Step3Identity({
   onNext: () => void
   onBack: () => void
 }) {
+  // Set default personality if not already set
+  useEffect(() => {
+    if (!data.personality) {
+      updateData({
+        personality: `You are ${data.agentName || 'an AI assistant'}, a friendly and knowledgeable assistant for ${data.businessName || 'this business'}. You help customers and staff with questions and tasks. You communicate in a warm, approachable tone that reflects the brand.`
+      })
+    }
+  }, []) // Only run once when component mounts
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!data.agentName || !data.personality) {
@@ -64,7 +74,7 @@ export default function Step3Identity({
           id="personality"
           required
           rows={6}
-          value={data.personality || `You are ${data.agentName || 'an AI assistant'}, a friendly and knowledgeable assistant for ${data.businessName || 'this business'}. You help customers and staff with questions and tasks. You communicate in a warm, approachable tone that reflects the brand.`}
+          value={data.personality || ''}
           onChange={(e) => updateData({ personality: e.target.value })}
           className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-winston-500 focus:border-transparent"
         />
