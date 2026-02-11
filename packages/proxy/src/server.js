@@ -19,7 +19,7 @@ const { routeRequest } = require('./router');
 const { checkCredits, deductCredits } = require('./metering');
 
 const app = express();
-const PORT = process.env.LLM_PROXY_PORT || 3002;
+const PORT = process.env.PORT || process.env.LLM_PROXY_PORT || 3002;
 
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));

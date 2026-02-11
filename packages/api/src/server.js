@@ -21,7 +21,7 @@ const healthRouter = require('./routes/health');
 const websiteRouter = require('./routes/website');
 
 const app = express();
-const PORT = process.env.WINSTON_API_PORT || 3001;
+const PORT = process.env.PORT || process.env.WINSTON_API_PORT || 3001;
 
 // Middleware
 app.use(cors());
