@@ -138,7 +138,7 @@ async function createService(projectId, tenant) {
         projectId: "${projectId}",
         name: "${serviceName}",
         source: {
-          image: "alpine/openclaw:latest"
+          repo: "vignesh07/clawdbot-railway-template"
         }
       }) {
         id
@@ -164,7 +164,7 @@ async function createVolume(projectId, serviceId) {
         projectId: "${projectId}",
         serviceId: "${serviceId}",
         name: "openclaw-data",
-        mountPath: "/home/node/.openclaw"
+        mountPath: "/data"
       }) {
         id
         name
@@ -229,8 +229,12 @@ async function uploadConfigs(projectId, serviceId, volumeId, configs) {
  */
 async function setEnvironmentVariables(projectId, serviceId, tenant, configs) {
   const variables = {
+    // OpenClaw required variables
+    SETUP_PASSWORD: configs.gatewayToken.slice(0, 16), // Use part of gateway token as setup password
+    PORT: '8080',
     OPENCLAW_GATEWAY_TOKEN: configs.gatewayToken,
-    OPENCLAW_DATA_DIR: '/home/node/.openclaw',
+    OPENCLAW_STATE_DIR: '/data/.openclaw',
+    OPENCLAW_WORKSPACE_DIR: '/data/workspace',
     // LLM Proxy configuration
     LLM_PROXY_URL: process.env.LLM_PROXY_URL || 'https://winston-proxy.railway.app',
     // Tenant identification
