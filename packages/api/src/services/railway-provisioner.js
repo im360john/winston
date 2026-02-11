@@ -6,9 +6,14 @@
  */
 
 const axios = require('axios');
+const path = require('path');
+
+// Load environment variables
+require('dotenv').config({ path: path.join(__dirname, '../../../../.env') });
 
 const RAILWAY_API_URL = 'https://backboard.railway.app/graphql/v2';
 const RAILWAY_API_TOKEN = process.env.RAILWAY_API_TOKEN;
+const RAILWAY_WORKSPACE_ID = process.env.RAILWAY_WORKSPACE_ID || '4a58ce21-7a1d-4a39-b095-dc7e75b1c2b3';
 
 /**
  * Provision tenant to Railway
@@ -74,14 +79,16 @@ async function getOrCreateProject() {
 
   const projectName = 'winston-poc';
 
-  // Try to find existing project
+  // Try to find existing project in workspace
   const query = `
     query {
-      projects {
-        edges {
-          node {
-            id
-            name
+      workspace(workspaceId: "${RAILWAY_WORKSPACE_ID}") {
+        projects {
+          edges {
+            node {
+              id
+              name
+            }
           }
         }
       }
@@ -89,7 +96,7 @@ async function getOrCreateProject() {
   `;
 
   const response = await railwayRequest(query);
-  const projects = response.data.projects.edges;
+  const projects = response.data.workspace.projects.edges;
 
   const existingProject = projects.find(p => p.node.name === projectName);
 
@@ -103,7 +110,8 @@ async function getOrCreateProject() {
     mutation {
       projectCreate(input: {
         name: "${projectName}",
-        description: "Winston POC - Multi-tenant OpenClaw platform"
+        description: "Winston POC - Multi-tenant OpenClaw platform",
+        workspaceId: "${RAILWAY_WORKSPACE_ID}"
       }) {
         id
         name
@@ -341,15 +349,31 @@ async function getServiceUrl(projectId, serviceId) {
  */
 async function railwayRequest(query) {
   try {
+    // Use environment variable to determine token type
+    // Default to Bearer (Account/Workspace token) for broader access
+    const useProjectToken = process.env.RAILWAY_USE_PROJECT_TOKEN === 'true';
+
+    const headers = {
+      'Content-Type': 'application/json'
+    };
+
+    if (useProjectToken) {
+      headers['Project-Access-Token'] = RAILWAY_API_TOKEN;
+    } else {
+      headers['Authorization'] = `Bearer ${RAILWAY_API_TOKEN}`;
+    }
+
+    // Debug logging
+    if (process.env.DEBUG_RAILWAY) {
+      console.log('[Railway Debug] URL:', RAILWAY_API_URL);
+      console.log('[Railway Debug] Headers:', headers);
+      console.log('[Railway Debug] Query:', query.substring(0, 100));
+    }
+
     const response = await axios.post(
       RAILWAY_API_URL,
       { query },
-      {
-        headers: {
-          'Authorization': `Bearer ${RAILWAY_API_TOKEN}`,
-          'Content-Type': 'application/json'
-        }
-      }
+      { headers }
     );
 
     if (response.data.errors) {
