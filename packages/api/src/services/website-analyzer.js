@@ -120,8 +120,9 @@ If information is not available, use null. Be concise and accurate.`;
 
   try {
     // Call LLM proxy with Claude Sonnet (using Winston's proxy for metering)
+    const proxyUrl = process.env.LLM_PROXY_URL || 'http://localhost:3002';
     const response = await axios.post(
-      'http://localhost:3002/v1/messages',
+      `${proxyUrl}/v1/messages`,
       {
         messages: [
           {
