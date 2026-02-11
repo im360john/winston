@@ -133,7 +133,7 @@ If information is not available, use null. Be concise and accurate.`;
       },
       {
         headers: {
-          'Authorization': 'Bearer winston-system', // Special system tenant for internal operations
+          'Authorization': 'Bearer winston-00000000-0000-0000-0000-000000000000', // Special system tenant for internal operations
           'Content-Type': 'application/json'
         },
         timeout: 8000 // 8 second timeout (leaving 2s for other operations)
