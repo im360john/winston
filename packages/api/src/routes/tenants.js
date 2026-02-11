@@ -238,7 +238,7 @@ router.patch('/:id', async (req, res, next) => {
     const updates = req.body;
 
     // Allowed fields to update
-    const allowedFields = ['name', 'website_url', 'selected_model', 'tier'];
+    const allowedFields = ['name', 'website_url', 'selected_model', 'tier', 'stripe_customer_id', 'stripe_subscription_id'];
     const updateFields = Object.keys(updates).filter(key => allowedFields.includes(key));
 
     if (updateFields.length === 0) {
