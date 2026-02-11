@@ -1,0 +1,118 @@
+{
+  "meta": {
+    "lastTouchedVersion": "2026.2.x",
+    "winston": {
+      "tenantId": "53eb6054-4c8d-442c-a9c7-9ce7970b9376",
+      "tier": "free",
+      "baselineVersion": "1.0"
+    }
+  },
+  "gateway": {
+    "port": 18789,
+    "mode": "local",
+    "bind": "loopback",
+    "auth": {
+      "mode": "token",
+      "token": "b5d0a1ac3a135d7585217ccfc60da31aad45a8d54e5a894dbdebe443b2fe9229"
+    }
+  },
+  "models": {
+    "providers": {
+      "winston": {
+        "baseUrl": "http://localhost:3002",
+        "apiKey": "winston-53eb6054-4c8d-442c-a9c7-9ce7970b9376",
+        "api": "openai-completions",
+        "models": [
+          {
+            "id": "kimi-k2.5",
+            "name": "Kimi K2.5 (Default - Most Affordable)",
+            "reasoning": true,
+            "input": [
+              "text",
+              "image"
+            ],
+            "contextWindow": 262000,
+            "maxTokens": 8192
+          },
+          {
+            "id": "claude-sonnet-4-5",
+            "name": "Claude Sonnet 4.5 (5x credits)",
+            "reasoning": true,
+            "input": [
+              "text",
+              "image"
+            ],
+            "contextWindow": 200000,
+            "maxTokens": 8192
+          },
+          {
+            "id": "claude-opus-4-6",
+            "name": "Claude Opus 4.6 (12x credits)",
+            "reasoning": true,
+            "input": [
+              "text",
+              "image",
+              "video"
+            ],
+            "contextWindow": 200000,
+            "maxTokens": 16384
+          }
+        ]
+      }
+    }
+  },
+  "agents": {
+    "defaults": {
+      "model": "winston/claude-sonnet-4-5",
+      "workspace": "/data/workspace",
+      "memorySearch": {
+        "enabled": true,
+        "experimental": {
+          "sessionMemory": true
+        },
+        "sources": [
+          "memory",
+          "sessions"
+        ]
+      },
+      "tools": {
+        "profile": "minimal",
+        "allow": [
+          "read",
+          "web_search",
+          "memory_search",
+          "memory_get"
+        ],
+        "deny": [
+          "exec",
+          "write",
+          "edit",
+          "browser",
+          "cron",
+          "nodes"
+        ]
+      },
+      "messages": {
+        "contextOverflow": {
+          "strategy": "auto-compact",
+          "softThresholdTokens": 60000
+        }
+      }
+    }
+  },
+  "channels": {
+    "telegram": {
+      "enabled": true,
+      "botToken": "test-token-here"
+    },
+    "slack": {
+      "enabled": false
+    },
+    "whatsapp": {
+      "enabled": false
+    }
+  },
+  "skills": {
+    "entries": {}
+  }
+}
