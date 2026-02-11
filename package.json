@@ -1,0 +1,24 @@
+{
+  "name": "winston",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Winston - Multi-tenant AI agent platform built on OpenClaw",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "lint": "turbo run lint",
+    "clean": "turbo run clean && rm -rf node_modules",
+    "db:migrate": "node packages/api/src/db/migrate.js",
+    "db:seed": "node packages/api/src/db/seed.js"
+  },
+  "devDependencies": {
+    "turbo": "^1.11.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
