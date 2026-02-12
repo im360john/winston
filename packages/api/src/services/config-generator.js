@@ -97,7 +97,8 @@ async function generateTenantConfig(tenant, options = {}) {
     'AGENTS.md': agentsMd,
     'USER.md': userMd,
     'IDENTITY.md': identityMd,
-    gatewayToken
+    gatewayToken,
+    openclawConfig: JSON.parse(openclawConfig) // Parsed object for API calls
   };
 }
 

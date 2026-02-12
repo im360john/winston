@@ -50,18 +50,30 @@ async function provisionToRailway(tenant, configs) {
     // Step 6: Deploy OpenClaw image
     const deployment = await deployImage(projectId, serviceId);
 
-    // Step 5: Get public URL
+    // Step 7: Get public URL (waits for deployment to be ready)
     const url = await getServiceUrl(projectId, serviceId);
+
+    // Step 8: Configure OpenClaw via setup API
+    const setupPassword = configs.gatewayToken.slice(0, 16);
+    try {
+      await configureOpenClaw(url, setupPassword, configs.openclawConfig);
+    } catch (error) {
+      console.log('[Railway] OpenClaw auto-configuration failed, manual setup required');
+      // Don't throw - service is still usable via manual setup
+    }
 
     console.log(`[Railway] Successfully provisioned tenant ${tenant.id}`);
     console.log(`[Railway] Service ID: ${serviceId}`);
     console.log(`[Railway] URL: ${url}`);
+    console.log(`[Railway] Setup URL: ${url}/setup (password: ${setupPassword})`);
 
     return {
       projectId,
       serviceId,
       deploymentId: deployment.id,
-      url
+      url,
+      setupUrl: `${url}/setup`,
+      setupPassword
     };
 
   } catch (error) {
@@ -297,7 +309,7 @@ async function getEnvironmentId(projectId) {
 }
 
 /**
- * Deploy the OpenClaw image
+ * Deploy the OpenClaw service
  */
 async function deployImage(projectId, serviceId) {
   // Get environment ID
@@ -305,10 +317,11 @@ async function deployImage(projectId, serviceId) {
 
   const mutation = `
     mutation {
-      serviceInstanceDeploy(
-        serviceId: "${serviceId}",
-        environmentId: "${envId}"
-      )
+      environmentTriggersDeploy(input: {
+        projectId: "${projectId}",
+        environmentId: "${envId}",
+        serviceId: "${serviceId}"
+      })
     }
   `;
 
@@ -325,9 +338,47 @@ async function deployImage(projectId, serviceId) {
  * Get public URL for the service
  */
 async function getServiceUrl(projectId, serviceId) {
-  // Railway will auto-generate a URL
-  // For now, return placeholder - actual URL available in Railway dashboard
+  // Wait for deployment to complete and get the public domain
+  console.log('[Railway] Waiting for deployment to complete...');
 
+  // Poll for deployment status (max 5 minutes)
+  const maxAttempts = 30;
+  const pollInterval = 10000; // 10 seconds
+
+  for (let i = 0; i < maxAttempts; i++) {
+    await new Promise(resolve => setTimeout(resolve, pollInterval));
+
+    try {
+      const query = `
+        query {
+          service(id: "${serviceId}") {
+            id
+            name
+          }
+        }
+      `;
+
+      const response = await railwayRequest(query);
+      const serviceName = response.data.service.name;
+
+      // Construct the URL
+      const url = `https://${serviceName}-production.up.railway.app`;
+
+      // Test if service is responding
+      const axios = require('axios');
+      try {
+        await axios.get(url, { timeout: 5000, maxRedirects: 0, validateStatus: () => true });
+        console.log(`[Railway] Service is live at: ${url}`);
+        return url;
+      } catch (err) {
+        console.log(`[Railway] Service not ready yet, attempt ${i + 1}/${maxAttempts}...`);
+      }
+    } catch (error) {
+      console.log(`[Railway] Polling error: ${error.message}`);
+    }
+  }
+
+  // Fallback: return constructed URL even if not verified
   const query = `
     query {
       service(id: "${serviceId}") {
@@ -337,15 +388,9 @@ async function getServiceUrl(projectId, serviceId) {
     }
   `;
 
-  try {
-    const response = await railwayRequest(query);
-    const serviceName = response.data.service.name;
-    // Railway auto-generates URLs like: project-name-production.up.railway.app
-    return `https://${serviceName}-production.up.railway.app`;
-  } catch (error) {
-    console.log(`[Railway] Could not get service URL: ${error.message}`);
-    return `https://railway.app/project/${projectId}`;
-  }
+  const response = await railwayRequest(query);
+  const serviceName = response.data.service.name;
+  return `https://${serviceName}-production.up.railway.app`;
 }
 
 /**
@@ -396,6 +441,41 @@ async function railwayRequest(query) {
 }
 
 /**
+ * Configure OpenClaw via setup API
+ */
+async function configureOpenClaw(url, setupPassword, openclawConfig) {
+  console.log('[Railway] Configuring OpenClaw via setup API...');
+
+  const axios = require('axios');
+
+  try {
+    // Access the setup endpoint with authentication
+    const response = await axios.post(
+      `${url}/api/setup/config`,
+      { config: openclawConfig },
+      {
+        auth: {
+          username: 'setup',
+          password: setupPassword
+        },
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        timeout: 10000
+      }
+    );
+
+    console.log('[Railway] OpenClaw configuration uploaded successfully');
+    return response.data;
+  } catch (error) {
+    console.error('[Railway] Failed to configure OpenClaw:', error.message);
+    console.log('[Railway] Manual configuration required at:', `${url}/setup`);
+    console.log('[Railway] Setup password:', setupPassword);
+    throw new Error('OpenClaw configuration failed - manual setup required');
+  }
+}
+
+/**
  * Delete a Railway service (for cleanup)
  */
 async function deleteService(serviceId) {
@@ -412,5 +492,6 @@ async function deleteService(serviceId) {
 module.exports = {
   provisionToRailway,
   deleteService,
-  railwayRequest
+  railwayRequest,
+  configureOpenClaw
 };
