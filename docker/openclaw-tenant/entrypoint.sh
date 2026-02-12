@@ -6,8 +6,8 @@ echo "🚀 Winston Tenant Container Starting"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 # Validate required environment variables
-if [ -z "$TENANT_ID" ]; then
-  echo "❌ ERROR: TENANT_ID environment variable is required"
+if [ -z "$WINSTON_TENANT_ID" ]; then
+  echo "❌ ERROR: WINSTON_TENANT_ID environment variable is required"
   exit 1
 fi
 
@@ -15,7 +15,7 @@ if [ -z "$WINSTON_SIDECAR_TOKEN" ]; then
   echo "⚠️  WARNING: WINSTON_SIDECAR_TOKEN not set - sidecar API will be unsecured"
 fi
 
-echo "🆔 Tenant ID: $TENANT_ID"
+echo "🆔 Tenant ID: $WINSTON_TENANT_ID"
 echo "📁 Data directory: /data"
 echo ""
 
@@ -46,12 +46,12 @@ echo ""
 # (In production, these should be fetched from Winston API or set via env vars)
 if [ ! -f /data/openclaw.json ]; then
   echo "⚠️  No openclaw.json found, creating placeholder..."
-  cat > /data/openclaw.json <<'EOF'
+  cat > /data/openclaw.json <<EOF
 {
   "meta": {
     "lastTouchedVersion": "2026.2.x",
     "winston": {
-      "tenantId": "$TENANT_ID",
+      "tenantId": "$WINSTON_TENANT_ID",
       "initialized": false
     }
   },
