@@ -246,7 +246,8 @@ watcher.on('unlink', async (filePath) => {
 // Server Startup
 // ============================================================================
 
-const PORT = 18790
+// Use PORT env var for Railway public access, fallback to 18790 for local/internal
+const PORT = process.env.PORT || 18790
 const HOST = '0.0.0.0'
 
 app.listen(PORT, HOST, () => {
