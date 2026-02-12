@@ -1,13 +1,18 @@
 {
-  "name": "winston-sidecar",
-  "version": "1.0.0",
-  "description": "Winston sidecar API for live tenant file management",
-  "main": "sidecar.js",
-  "dependencies": {
-    "express": "^4.18.2",
-    "chokidar": "^3.5.3"
-  },
+  "name": "winston-openclaw-tenant",
+  "private": true,
+  "type": "module",
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "node src/server.js",
+    "start": "node src/server.js"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "http-proxy": "^1.18.1",
+    "tar": "^7.5.4",
+    "chokidar": "^4.0.3"
   }
 }
