@@ -35,22 +35,25 @@ async function provisionToRailway(tenant, configs) {
     // Step 1: Create project (or use existing)
     const projectId = await getOrCreateProject();
 
-    // Step 2: Create service
+    // Step 2: Create service (WITHOUT source to prevent premature deployment)
     const serviceId = await createService(projectId, tenant);
 
-    // Step 3: Create volume for configs
-    const volumeId = await createVolume(projectId, serviceId);
-
-    // Step 4: Upload config files to volume
-    await uploadConfigs(projectId, serviceId, volumeId, configs);
-
-    // Step 5: Set environment variables
+    // Step 3: Set environment variables (before source is connected)
     await setEnvironmentVariables(projectId, serviceId, tenant, configs);
 
-    // Step 6: Deploy OpenClaw image
+    // Step 4: Create volume for configs
+    const volumeId = await createVolume(projectId, serviceId);
+
+    // Step 5: Upload config files to volume
+    await uploadConfigs(projectId, serviceId, volumeId, configs);
+
+    // Step 6: Connect GitHub source (this triggers THE deployment)
+    await connectServiceSource(serviceId);
+
+    // Step 7: Manually trigger deployment (ensures it starts fresh)
     const deployment = await deployImage(projectId, serviceId);
 
-    // Step 7: Get public URL (waits for deployment to be ready)
+    // Step 8: Get public URL (waits for deployment to be ready)
     const url = await getServiceUrl(projectId, serviceId);
 
     // Step 8: Configure OpenClaw via setup API
@@ -139,7 +142,7 @@ async function getOrCreateProject() {
 }
 
 /**
- * Create a new service in Railway
+ * Create a new service in Railway (without source initially to prevent premature deployment)
  */
 async function createService(projectId, tenant) {
   const serviceName = `tenant-${tenant.id.slice(0, 8)}`;
@@ -148,10 +151,7 @@ async function createService(projectId, tenant) {
     mutation {
       serviceCreate(input: {
         projectId: "${projectId}",
-        name: "${serviceName}",
-        source: {
-          repo: "vignesh07/clawdbot-railway-template"
-        }
+        name: "${serviceName}"
       }) {
         id
         name
@@ -163,7 +163,34 @@ async function createService(projectId, tenant) {
   const serviceId = response.data.serviceCreate.id;
 
   console.log(`[Railway] Created service: ${serviceId} (${serviceName})`);
+  console.log(`[Railway] Service created WITHOUT source (will add after variables are set)`);
   return serviceId;
+}
+
+/**
+ * Connect GitHub source to the service
+ */
+async function connectServiceSource(serviceId) {
+  console.log('[Railway] Connecting GitHub source to service...');
+
+  const mutation = `
+    mutation {
+      serviceConnect(input: {
+        serviceId: "${serviceId}",
+        repo: "vignesh07/clawdbot-railway-template"
+      }) {
+        id
+      }
+    }
+  `;
+
+  try {
+    await railwayRequest(mutation);
+    console.log('[Railway] GitHub source connected');
+  } catch (error) {
+    console.error('[Railway] Failed to connect source:', error.message);
+    throw error;
+  }
 }
 
 /**
