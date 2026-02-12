@@ -119,11 +119,29 @@ railway restart --service tenant-{id}
 
 ## Key Technical Decisions
 
-### Config Management
+### Config Management (Sidecar Pattern)
 - **Baseline template** (`openclaw-base.json`) contains platform defaults
-- **Tenant overrides** stored in Postgres, merged at deploy time
-- Updates: merge new baseline → preserve tenant customizations → restart gateway
-- Version tracking: `winston.baselineVersion` field in config
+- **Live file access** via sidecar API in each tenant container
+- **No restart required** for most config/MD file updates
+- **Bidirectional sync** captures agent-created content every 5 minutes
+- **Version tracking** via `file_snapshots` table with full history
+
+#### How It Works
+Each tenant container runs TWO services:
+1. **OpenClaw Gateway** (vanilla, unmodified) - the actual agent
+2. **Winston Sidecar API** (Node.js HTTP server) - file management
+
+The sidecar provides:
+- `GET/PUT /files/*` - Read/write any file in `/data/` without restart
+- File change detection (tracks agent modifications)
+- Local change log for audit trail
+
+This enables:
+- Live troubleshooting (edit SOUL.md, see changes immediately)
+- Captures agent-created skills and sub-agents automatically
+- Full history of all file changes with timestamps
+- Rollback to any previous version
+- No data loss from container restarts
 
 ### Channel Selection
 - **Default: Telegram** (simplest setup, most reliable)
@@ -149,8 +167,9 @@ railway restart --service tenant-{id}
 ## Database Schema Key Tables
 
 - `tenants` - org records, credit balances, tier, selected model
-- `tenant_instances` - Railway service mapping, health status
-- `config_snapshots` - versioned configs for rollback
+- `tenant_instances` - Railway service mapping, health status, sidecar URL
+- `file_snapshots` - all MD/JSON files with full history (replaces config_snapshots)
+- `file_changes` - change log with source tracking (agent/admin/system)
 - `credit_usage` - token consumption audit trail
 - `session_transcripts` - synced from container JSONL, 90-day retention
 - `channel_health` - track disconnections (especially WhatsApp)

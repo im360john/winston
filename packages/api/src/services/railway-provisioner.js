@@ -16,6 +16,43 @@ const RAILWAY_API_TOKEN = process.env.RAILWAY_API_TOKEN;
 const RAILWAY_WORKSPACE_ID = process.env.RAILWAY_WORKSPACE_ID || '4a58ce21-7a1d-4a39-b095-dc7e75b1c2b3';
 
 /**
+ * Save configs to file_snapshots table for sidecar access
+ */
+async function saveConfigsToFileSnapshots(tenantId, configs) {
+  const { Pool } = require('pg');
+  const crypto = require('crypto');
+  const pool = new Pool({
+    connectionString: process.env.DATABASE_URL || 'postgresql://postgres:vivWucvTWUMEpNLPwmYhFbvmlEeVOWCT@metro.proxy.rlwy.net:48303/railway'
+  });
+
+  try {
+    for (const [filename, content] of Object.entries(configs)) {
+      // Skip non-file configs
+      if (['gatewayToken', 'openclawConfig', 'sidecarToken'].includes(filename)) {
+        continue;
+      }
+
+      const hash = crypto.createHash('sha256').update(content).digest('hex');
+
+      await pool.query(`
+        INSERT INTO file_snapshots (tenant_id, file_path, content, hash, size, source)
+        VALUES ($1, $2, $3, $4, $5, $6)
+      `, [
+        tenantId,
+        filename,
+        content,
+        hash,
+        Buffer.byteLength(content),
+        'system'
+      ]);
+    }
+    console.log('[Railway] Saved configs to file_snapshots table');
+  } finally {
+    await pool.end();
+  }
+}
+
+/**
  * Provision tenant to Railway
  *
  * Creates a new Railway service with OpenClaw container
@@ -75,10 +112,19 @@ async function provisionToRailway(tenant, configs, onProgress = null) {
       // Don't throw - service is still usable via manual setup
     }
 
+    // Save configs to file_snapshots table
+    try {
+      await saveConfigsToFileSnapshots(tenant.id, configs);
+    } catch (error) {
+      console.log('[Railway] Warning: Could not save configs to file_snapshots:', error.message);
+    }
+
     console.log(`[Railway] Successfully provisioned tenant ${tenant.id}`);
     console.log(`[Railway] Service ID: ${serviceId}`);
     console.log(`[Railway] URL: ${url}`);
     console.log(`[Railway] Setup URL: ${url}/setup (password: ${setupPassword})`);
+    console.log(`[Railway] Sidecar API: ${url}:18790`);
+    console.log(`[Railway] Sidecar Token: ${configs.sidecarToken?.substring(0, 20)}...`);
 
     return {
       projectId,
@@ -86,7 +132,9 @@ async function provisionToRailway(tenant, configs, onProgress = null) {
       deploymentId: deployment.id,
       url,
       setupUrl: `${url}/setup`,
-      setupPassword
+      setupPassword,
+      sidecarUrl: `${url}:18790`,
+      sidecarToken: configs.sidecarToken
     };
 
   } catch (error) {
@@ -195,7 +243,7 @@ async function getOrCreateService(projectId, tenant) {
 }
 
 /**
- * Create service with GitHub source
+ * Create service with GitHub source (Winston sidecar-enabled)
  * This triggers ONE initial deployment
  */
 async function createService(projectId, tenant) {
@@ -207,7 +255,8 @@ async function createService(projectId, tenant) {
         projectId: "${projectId}",
         name: "${serviceName}",
         source: {
-          repo: "vignesh07/clawdbot-railway-template"
+          repo: "im360john/winston",
+          rootDirectory: "docker/openclaw-tenant"
         }
       }) {
         id
@@ -220,6 +269,7 @@ async function createService(projectId, tenant) {
   const serviceId = response.data.serviceCreate.id;
 
   console.log(`[Railway] Created service: ${serviceId} (${serviceName})`);
+  console.log(`[Railway] Deploying from: github.com/im360john/winston/docker/openclaw-tenant`);
   console.log(`[Railway] Initial deployment triggered from source`);
   return serviceId;
 }
@@ -332,6 +382,13 @@ async function uploadConfigs(projectId, serviceId, volumeId, configs) {
  * This sets ALL variables in a single mutation with skipDeploys option
  */
 async function setEnvironmentVariables(projectId, serviceId, tenant, configs) {
+  // Generate sidecar token
+  const crypto = require('crypto');
+  const sidecarToken = crypto.randomBytes(32).toString('hex');
+
+  // Store in configs for later use
+  configs.sidecarToken = sidecarToken;
+
   const variables = {
     // OpenClaw required variables
     SETUP_PASSWORD: configs.gatewayToken.slice(0, 16),
@@ -343,7 +400,10 @@ async function setEnvironmentVariables(projectId, serviceId, tenant, configs) {
     LLM_PROXY_URL: process.env.LLM_PROXY_URL || 'https://winston-proxy.railway.app',
     // Tenant identification
     WINSTON_TENANT_ID: tenant.id,
-    WINSTON_TIER: tenant.tier
+    WINSTON_TIER: tenant.tier,
+    // Sidecar API
+    WINSTON_SIDECAR_TOKEN: sidecarToken,
+    NODE_ENV: 'production'
   };
 
   // Get environment ID

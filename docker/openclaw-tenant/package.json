@@ -1,0 +1,13 @@
+{
+  "name": "winston-sidecar",
+  "version": "1.0.0",
+  "description": "Winston sidecar API for live tenant file management",
+  "main": "sidecar.js",
+  "dependencies": {
+    "express": "^4.18.2",
+    "chokidar": "^3.5.3"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
