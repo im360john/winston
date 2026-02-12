@@ -255,8 +255,7 @@ async function createService(projectId, tenant) {
         projectId: "${projectId}",
         name: "${serviceName}",
         source: {
-          repo: "im360john/winston",
-          rootDirectory: "docker/openclaw-tenant"
+          repo: "im360john/winston"
         }
       }) {
         id
