@@ -100,7 +100,7 @@ export function setupWinstonSidecar(app, STATE_DIR) {
   });
 
   // List files in a directory
-  app.get('/winston/files/*', winstonAuth, (req, res) => {
+  app.get('/winston/files/:0*', winstonAuth, (req, res) => {
     const filePath = path.join(STATE_DIR, req.params[0] || '');
 
     // Security: prevent path traversal
@@ -149,7 +149,7 @@ export function setupWinstonSidecar(app, STATE_DIR) {
   });
 
   // Write file
-  app.put('/winston/files/*', winstonAuth, (req, res) => {
+  app.put('/winston/files/:0*', winstonAuth, (req, res) => {
     const filePath = path.join(STATE_DIR, req.params[0]);
     const { content } = req.body;
 
