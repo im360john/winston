@@ -238,6 +238,7 @@ async function uploadConfigs(projectId, serviceId, volumeId, configs) {
 
 /**
  * Set environment variables for the service
+ * Sets all variables rapidly to minimize deployment triggers
  */
 async function setEnvironmentVariables(projectId, serviceId, tenant, configs) {
   const variables = {
@@ -257,7 +258,10 @@ async function setEnvironmentVariables(projectId, serviceId, tenant, configs) {
   // Get environment ID (use production environment)
   const envId = await getEnvironmentId(projectId);
 
-  for (const [key, value] of Object.entries(variables)) {
+  console.log('[Railway] Setting all environment variables (batch mode)...');
+
+  // Set all variables in parallel to minimize time window for multiple deployments
+  const variablePromises = Object.entries(variables).map(([key, value]) => {
     const mutation = `
       mutation {
         variableUpsert(input: {
@@ -265,17 +269,21 @@ async function setEnvironmentVariables(projectId, serviceId, tenant, configs) {
           environmentId: "${envId}",
           serviceId: "${serviceId}",
           name: "${key}",
-          value: "${value}"
+          value: "${value.replace(/"/g, '\\"')}"
         })
       }
     `;
 
-    await railwayRequest(mutation);
-    console.log(`[Railway] Set variable: ${key}`);
-  }
+    return railwayRequest(mutation).then(() => {
+      console.log(`[Railway] ✓ ${key}`);
+    });
+  });
 
-  // TODO: Upload config files to Railway volume
-  // For now, configs will be generated on container startup
+  await Promise.all(variablePromises);
+  console.log('[Railway] All environment variables set');
+
+  // Wait a moment for Railway to process the updates
+  await new Promise(resolve => setTimeout(resolve, 5000));
 }
 
 /**
@@ -335,50 +343,11 @@ async function deployImage(projectId, serviceId) {
 }
 
 /**
- * Get public URL for the service
+ * Get public URL for the service and wait for it to be ready
  */
 async function getServiceUrl(projectId, serviceId) {
-  // Wait for deployment to complete and get the public domain
-  console.log('[Railway] Waiting for deployment to complete...');
+  console.log('[Railway] Getting service URL...');
 
-  // Poll for deployment status (max 5 minutes)
-  const maxAttempts = 30;
-  const pollInterval = 10000; // 10 seconds
-
-  for (let i = 0; i < maxAttempts; i++) {
-    await new Promise(resolve => setTimeout(resolve, pollInterval));
-
-    try {
-      const query = `
-        query {
-          service(id: "${serviceId}") {
-            id
-            name
-          }
-        }
-      `;
-
-      const response = await railwayRequest(query);
-      const serviceName = response.data.service.name;
-
-      // Construct the URL
-      const url = `https://${serviceName}-production.up.railway.app`;
-
-      // Test if service is responding
-      const axios = require('axios');
-      try {
-        await axios.get(url, { timeout: 5000, maxRedirects: 0, validateStatus: () => true });
-        console.log(`[Railway] Service is live at: ${url}`);
-        return url;
-      } catch (err) {
-        console.log(`[Railway] Service not ready yet, attempt ${i + 1}/${maxAttempts}...`);
-      }
-    } catch (error) {
-      console.log(`[Railway] Polling error: ${error.message}`);
-    }
-  }
-
-  // Fallback: return constructed URL even if not verified
   const query = `
     query {
       service(id: "${serviceId}") {
@@ -390,7 +359,42 @@ async function getServiceUrl(projectId, serviceId) {
 
   const response = await railwayRequest(query);
   const serviceName = response.data.service.name;
-  return `https://${serviceName}-production.up.railway.app`;
+  const url = `https://${serviceName}-production.up.railway.app`;
+
+  console.log(`[Railway] Service URL: ${url}`);
+  console.log('[Railway] Waiting for deployment to complete (2-3 minutes)...');
+
+  // Wait minimum 2 minutes for Railway to build and deploy
+  const minWaitTime = 120000; // 2 minutes
+  console.log('[Railway] Initial wait: 120 seconds...');
+  await new Promise(resolve => setTimeout(resolve, minWaitTime));
+
+  // Then poll for service to be responding (max additional 3 minutes)
+  const maxAttempts = 18; // 18 * 10s = 3 minutes
+  const pollInterval = 10000; // 10 seconds
+
+  for (let i = 0; i < maxAttempts; i++) {
+    try {
+      const axios = require('axios');
+      const testResponse = await axios.get(url, {
+        timeout: 5000,
+        maxRedirects: 5,
+        validateStatus: (status) => status < 500 // Accept any non-5xx response
+      });
+
+      // If we get any response (even 401/404), the service is running
+      console.log(`[Railway] Service is responding (status: ${testResponse.status})`);
+      console.log(`[Railway] Service is live at: ${url}`);
+      return url;
+    } catch (err) {
+      console.log(`[Railway] Waiting for service... attempt ${i + 1}/${maxAttempts}`);
+      await new Promise(resolve => setTimeout(resolve, pollInterval));
+    }
+  }
+
+  // After 5 minutes total, return URL anyway
+  console.log(`[Railway] Timeout waiting for service, proceeding anyway...`);
+  return url;
 }
 
 /**
