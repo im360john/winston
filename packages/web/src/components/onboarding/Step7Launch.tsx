@@ -129,7 +129,7 @@ export default function Step7Launch({
       setProgress(prev => [...prev, 'Generating configs...'])
       await new Promise(resolve => setTimeout(resolve, 1000))
 
-      setProgress(prev => [...prev, 'Deploying to Railway...'])
+      setProgress(prev => [...prev, 'Deploying to Railway (this takes 3-4 minutes)...'])
       const provisionResponse = await axios.post(
         `${API_URL}/api/tenants/${tenantId}/provision`,
         {
@@ -144,8 +144,13 @@ export default function Step7Launch({
             webchat: data.channels?.webchat || true,
           },
           telegramBotToken: data.telegramBotToken,
+        },
+        {
+          timeout: 360000, // 6 minutes timeout (provisioning takes 3-4 min)
         }
       )
+
+      console.log('[Onboarding] Provision complete:', provisionResponse.data)
 
       // Step 8: Connect channels
       setProgress(prev => [...prev, 'Connecting channels...'])
@@ -159,10 +164,18 @@ export default function Step7Launch({
       router.push(`/dashboard?tenant=${tenantId}`)
 
     } catch (err) {
+      console.error('[Onboarding] Launch error:', err)
+
       if (axios.isAxiosError(err)) {
-        setError(err.response?.data?.error || 'Failed to launch agent')
+        if (err.code === 'ECONNABORTED') {
+          setError('Deployment timeout - this may still complete. Check your dashboard in a few minutes or contact support.')
+        } else if (err.response?.status === 500) {
+          setError(`Server error: ${err.response?.data?.error || 'Please try again or contact support'}`)
+        } else {
+          setError(err.response?.data?.error || err.message || 'Failed to launch agent')
+        }
       } else {
-        setError('An error occurred while launching your agent')
+        setError('An unexpected error occurred while launching your agent')
       }
       setLaunching(false)
     }

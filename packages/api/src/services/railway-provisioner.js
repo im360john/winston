@@ -22,9 +22,10 @@ const RAILWAY_WORKSPACE_ID = process.env.RAILWAY_WORKSPACE_ID || '4a58ce21-7a1d-
  *
  * @param {Object} tenant - Tenant record
  * @param {Object} configs - Generated config files
+ * @param {Function} onProgress - Optional callback for incremental progress (serviceId, url)
  * @returns {Object} Provision result with serviceId and URL
  */
-async function provisionToRailway(tenant, configs) {
+async function provisionToRailway(tenant, configs, onProgress = null) {
   if (!RAILWAY_API_TOKEN) {
     throw new Error('RAILWAY_API_TOKEN not configured');
   }
@@ -35,24 +36,35 @@ async function provisionToRailway(tenant, configs) {
     // Step 1: Create project (or use existing)
     const projectId = await getOrCreateProject();
 
-    // Step 2: Create service with GitHub source
-    const serviceId = await createService(projectId, tenant);
+    // Step 2: Get or create service (idempotent - handles partial failures)
+    const serviceId = await getOrCreateService(projectId, tenant);
+
+    // Save progress: service created
+    if (onProgress) {
+      await onProgress({ serviceId, step: 'service_created' });
+    }
 
     // Step 3: Set ALL environment variables in single batch with skipDeploys=true
-    // This prevents deployment while we configure the service
+    // This adds variables without triggering new deployment
     await setEnvironmentVariables(projectId, serviceId, tenant, configs);
 
     // Step 4: Create volume for configs (if supported)
     const volumeId = await createVolume(projectId, serviceId);
 
-    // Step 5: Upload config files to volume
+    // Step 5: Upload config files to volume with skipDeploys=true
+    // This adds config vars without triggering new deployment
     await uploadConfigs(projectId, serviceId, volumeId, configs);
 
-    // Step 6: Trigger deployment NOW that all variables are set
+    // Step 6: Now trigger ONE deployment with all variables set
     const deployment = await deployImage(projectId, serviceId);
 
     // Step 7: Wait for deployment to complete and get public URL
     const url = await getServiceUrl(projectId, serviceId);
+
+    // Save progress: URL created
+    if (onProgress) {
+      await onProgress({ serviceId, url, step: 'url_created' });
+    }
 
     // Step 8: Configure OpenClaw via setup API
     const setupPassword = configs.gatewayToken.slice(0, 16);
@@ -140,8 +152,51 @@ async function getOrCreateProject() {
 }
 
 /**
- * Create service with source (will trigger deployments)
- * Railway doesn't support adding source after creation
+ * Get existing service or create new one (idempotent)
+ * Handles recovery from partial failures
+ */
+async function getOrCreateService(projectId, tenant) {
+  const serviceName = `tenant-${tenant.id.slice(0, 8)}`;
+
+  // First, check if service already exists
+  console.log(`[Railway] Checking for existing service: ${serviceName}...`);
+
+  const query = `
+    query {
+      project(id: "${projectId}") {
+        services {
+          edges {
+            node {
+              id
+              name
+            }
+          }
+        }
+      }
+    }
+  `;
+
+  try {
+    const response = await railwayRequest(query);
+    const services = response.data.project.services.edges;
+    const existingService = services.find(s => s.node.name === serviceName);
+
+    if (existingService) {
+      console.log(`[Railway] Found existing service: ${existingService.node.id}`);
+      console.log(`[Railway] Recovering from partial failure - reusing service`);
+      return existingService.node.id;
+    }
+  } catch (error) {
+    console.log(`[Railway] Error checking for existing service, will create new one`);
+  }
+
+  // Service doesn't exist, create it
+  return await createService(projectId, tenant);
+}
+
+/**
+ * Create service with GitHub source
+ * This triggers ONE initial deployment
  */
 async function createService(projectId, tenant) {
   const serviceName = `tenant-${tenant.id.slice(0, 8)}`;
@@ -165,7 +220,7 @@ async function createService(projectId, tenant) {
   const serviceId = response.data.serviceCreate.id;
 
   console.log(`[Railway] Created service: ${serviceId} (${serviceName})`);
-  console.log(`[Railway] Note: Multiple deployments will trigger (Railway API limitation)`);
+  console.log(`[Railway] Initial deployment triggered from source`);
   return serviceId;
 }
 
@@ -249,24 +304,26 @@ async function uploadConfigs(projectId, serviceId, volumeId, configs) {
   // Get environment ID
   const envId = await getEnvironmentId(projectId);
 
-  // Set config environment variables
-  for (const [key, value] of Object.entries(configVars)) {
-    const mutation = `
-      mutation {
-        variableUpsert(input: {
-          projectId: "${projectId}",
-          environmentId: "${envId}",
-          serviceId: "${serviceId}",
-          name: "${key}",
-          value: "${value}"
-        })
-      }
-    `;
+  // Use variableCollectionUpsert to set all config variables at once with skipDeploys
+  const mutation = `
+    mutation variableCollectionUpsert($input: VariableCollectionUpsertInput!) {
+      variableCollectionUpsert(input: $input)
+    }
+  `;
 
-    await railwayRequest(mutation);
-  }
+  const variablesInput = {
+    input: {
+      projectId: projectId,
+      environmentId: envId,
+      serviceId: serviceId,
+      variables: configVars,
+      skipDeploys: true  // CRITICAL: Prevents deployment on variable update
+    }
+  };
 
-  console.log('[Railway] Config files encoded in environment variables');
+  await railwayRequest(mutation, variablesInput);
+
+  console.log('[Railway] Config files encoded in environment variables (deployment skipped)');
   console.log('[Railway] Container will decode and write on startup');
 }
 
@@ -352,18 +409,20 @@ async function deployImage(projectId, serviceId) {
   // Get environment ID
   const envId = await getEnvironmentId(projectId);
 
+  // Use the correct mutation from Railway API cookbook
   const mutation = `
-    mutation {
-      environmentTriggersDeploy(input: {
-        projectId: "${projectId}",
-        environmentId: "${envId}",
-        serviceId: "${serviceId}"
-      })
+    mutation serviceInstanceDeploy($serviceId: String!, $environmentId: String!) {
+      serviceInstanceDeploy(serviceId: $serviceId, environmentId: $environmentId)
     }
   `;
 
-  const response = await railwayRequest(mutation);
-  console.log(`[Railway] Deployment triggered`);
+  const variables = {
+    serviceId: serviceId,
+    environmentId: envId
+  };
+
+  const response = await railwayRequest(mutation, variables);
+  console.log(`[Railway] Deployment triggered via serviceInstanceDeploy`);
 
   return {
     id: 'deployment-triggered',
@@ -372,23 +431,83 @@ async function deployImage(projectId, serviceId) {
 }
 
 /**
+ * Create public domain for the service (idempotent)
+ */
+async function createPublicDomain(projectId, serviceId) {
+  console.log('[Railway] Creating public domain...');
+
+  const envId = await getEnvironmentId(projectId);
+
+  // First check if domain already exists
+  console.log('[Railway] Checking for existing domain...');
+  const checkQuery = `
+    query {
+      service(id: "${serviceId}") {
+        domains {
+          serviceDomains {
+            domain
+          }
+        }
+      }
+    }
+  `;
+
+  try {
+    const checkResponse = await railwayRequest(checkQuery);
+    const domains = checkResponse.data.service.domains?.serviceDomains || [];
+
+    if (domains.length > 0) {
+      const domain = domains[0].domain;
+      console.log(`[Railway] Found existing domain: ${domain}`);
+      return `https://${domain}`;
+    }
+  } catch (error) {
+    console.log('[Railway] Error checking for domain, will try to create');
+  }
+
+  // No existing domain, create one
+  const mutation = `
+    mutation {
+      serviceDomainCreate(input: {
+        environmentId: "${envId}",
+        serviceId: "${serviceId}"
+      }) {
+        id
+        domain
+      }
+    }
+  `;
+
+  try {
+    const response = await railwayRequest(mutation);
+    const domain = response.data.serviceDomainCreate.domain;
+    console.log(`[Railway] Public domain created: ${domain}`);
+    return `https://${domain}`;
+  } catch (error) {
+    console.log('[Railway] Failed to create domain, retrying query...');
+
+    // Creation might have failed but domain exists, check again
+    const queryResponse = await railwayRequest(checkQuery);
+    const domains = queryResponse.data.service.domains?.serviceDomains || [];
+
+    if (domains.length > 0) {
+      const domain = domains[0].domain;
+      console.log(`[Railway] Using existing domain: ${domain}`);
+      return `https://${domain}`;
+    }
+
+    throw new Error('Could not create or find public domain');
+  }
+}
+
+/**
  * Get public URL for the service and wait for it to be ready
  */
 async function getServiceUrl(projectId, serviceId) {
   console.log('[Railway] Getting service URL...');
 
-  const query = `
-    query {
-      service(id: "${serviceId}") {
-        id
-        name
-      }
-    }
-  `;
-
-  const response = await railwayRequest(query);
-  const serviceName = response.data.service.name;
-  const url = `https://${serviceName}-production.up.railway.app`;
+  // Create public domain first
+  const url = await createPublicDomain(projectId, serviceId);
 
   console.log(`[Railway] Service URL: ${url}`);
   console.log('[Railway] Waiting for deployment to complete (2-3 minutes)...');
@@ -484,6 +603,38 @@ async function railwayRequest(query, variables = null) {
 async function configureOpenClaw(url, setupPassword, openclawConfig) {
   console.log('[Railway] Configuring OpenClaw via setup wizard...');
 
+  // First, wait for /setup page to be ready (200 or 401 are both good)
+  console.log('[Railway] Waiting for OpenClaw setup page to be ready...');
+  const maxSetupAttempts = 30; // 30 * 10s = 5 minutes
+  const pollInterval = 10000; // 10 seconds
+  let setupReady = false;
+
+  for (let i = 0; i < maxSetupAttempts; i++) {
+    try {
+      const testResponse = await axios.get(`${url}/setup`, {
+        timeout: 5000,
+        maxRedirects: 5,
+        validateStatus: (status) => status < 500
+      });
+
+      // 200 = open setup, 401 = password protected setup (both are good!)
+      if (testResponse.status === 200 || testResponse.status === 401) {
+        console.log(`[Railway] Setup page is ready (status: ${testResponse.status})`);
+        setupReady = true;
+        break;
+      } else {
+        console.log(`[Railway] Setup page not ready yet (status: ${testResponse.status}), waiting...`);
+      }
+    } catch (err) {
+      console.log(`[Railway] Waiting for setup page... attempt ${i + 1}/${maxSetupAttempts}`);
+    }
+    await new Promise(resolve => setTimeout(resolve, pollInterval));
+  }
+
+  if (!setupReady) {
+    throw new Error('Setup page never became ready after 5 minutes');
+  }
+
   const puppeteer = require('puppeteer');
   let browser;
 
@@ -496,31 +647,17 @@ async function configureOpenClaw(url, setupPassword, openclawConfig) {
 
     const page = await browser.newPage();
 
-    // Navigate to setup page
+    // Set HTTP Basic Auth credentials for 401 protected pages
+    // OpenClaw uses empty username and setup password
+    console.log('[Railway] Setting up authentication...');
+    await page.authenticate({
+      username: '',  // OpenClaw uses empty username
+      password: setupPassword
+    });
+
+    // Navigate to setup page with auth
     console.log('[Railway] Navigating to setup page...');
     await page.goto(`${url}/setup`, { waitUntil: 'networkidle0', timeout: 30000 });
-
-    // Check if password input exists
-    const passwordInput = await page.$('input[type="password"]');
-    if (!passwordInput) {
-      throw new Error('Password input not found on setup page');
-    }
-
-    // Enter password
-    console.log('[Railway] Entering setup password...');
-    await page.type('input[type="password"]', setupPassword);
-
-    // Submit password form
-    const submitButton = await page.$('button[type="submit"], input[type="submit"], button:has-text("Submit"), button:has-text("Continue")');
-    if (submitButton) {
-      await Promise.all([
-        submitButton.click(),
-        page.waitForNavigation({ waitUntil: 'networkidle0', timeout: 10000 }).catch(() => {})
-      ]);
-    }
-
-    // Wait a bit for the page to load
-    await page.waitForTimeout(2000);
 
     // Look for config textarea or upload area
     console.log('[Railway] Looking for config editor...');
@@ -534,8 +671,23 @@ async function configureOpenClaw(url, setupPassword, openclawConfig) {
       await configTextarea.type(JSON.stringify(openclawConfig, null, 2), { delay: 10 });
 
       // Find and click save/submit button
-      const saveButton = await page.$('button:has-text("Save"), button:has-text("Upload"), button:has-text("Continue"), button[type="submit"]');
+      console.log('[Railway] Looking for submit button...');
+      let saveButton = await page.$('button[type="submit"]');
+
+      if (!saveButton) {
+        // Try finding by text content
+        const buttons = await page.$$('button');
+        for (const button of buttons) {
+          const text = await page.evaluate(el => el.textContent, button);
+          if (text && (text.includes('Save') || text.includes('Upload') || text.includes('Continue') || text.includes('Submit'))) {
+            saveButton = button;
+            break;
+          }
+        }
+      }
+
       if (saveButton) {
+        console.log('[Railway] Clicking submit button...');
         await saveButton.click();
         await page.waitForTimeout(2000);
       }
@@ -556,7 +708,18 @@ async function configureOpenClaw(url, setupPassword, openclawConfig) {
         await page.waitForTimeout(1000);
 
         // Click upload button
-        const uploadButton = await page.$('button:has-text("Upload"), button[type="submit"]');
+        let uploadButton = await page.$('button[type="submit"]');
+        if (!uploadButton) {
+          const buttons = await page.$$('button');
+          for (const button of buttons) {
+            const text = await page.evaluate(el => el.textContent, button);
+            if (text && (text.includes('Upload') || text.includes('Submit'))) {
+              uploadButton = button;
+              break;
+            }
+          }
+        }
+
         if (uploadButton) {
           await uploadButton.click();
           await page.waitForTimeout(2000);

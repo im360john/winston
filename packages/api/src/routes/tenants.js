@@ -185,10 +185,29 @@ router.post('/:id/provision', async (req, res, next) => {
       telegramBotToken
     });
 
-    // Provision to Railway
-    const provisionResult = await provisionToRailway(tenant, configs);
+    // Provision to Railway with progress callback
+    const provisionResult = await provisionToRailway(tenant, configs, async (progress) => {
+      // Save incremental progress to prevent data loss on partial failures
+      if (progress.serviceId && progress.step === 'service_created') {
+        await pool.query(`
+          UPDATE tenants
+          SET railway_service_id = $1, updated_at = NOW()
+          WHERE id = $2
+        `, [progress.serviceId, id]);
+        console.log(`[API] Saved Railway service ID: ${progress.serviceId}`);
+      }
 
-    // Update tenant status
+      if (progress.url && progress.step === 'url_created') {
+        await pool.query(`
+          UPDATE tenants
+          SET railway_url = $1, updated_at = NOW()
+          WHERE id = $2
+        `, [progress.url, id]);
+        console.log(`[API] Saved Railway URL: ${progress.url}`);
+      }
+    });
+
+    // Update tenant status to active
     await pool.query(`
       UPDATE tenants
       SET status = 'active', updated_at = NOW()
@@ -213,6 +232,14 @@ router.post('/:id/provision', async (req, res, next) => {
     });
 
   } catch (error) {
+    // Log detailed error for debugging
+    console.error('[API] Provisioning failed:', {
+      tenantId: id,
+      error: error.message,
+      stack: error.stack,
+      response: error.response?.data
+    });
+
     // Update tenant status to error
     try {
       await pool.query(`
