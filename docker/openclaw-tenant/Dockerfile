@@ -56,7 +56,7 @@ RUN corepack enable && corepack prepare pnpm@10.23.0 --activate
 WORKDIR /app
 
 # Wrapper deps (includes Winston sidecar functionality)
-COPY package.json ./
+COPY docker/openclaw-tenant/package.json ./
 RUN npm install --omit=dev && npm cache clean --force
 
 # Copy built openclaw
@@ -67,7 +67,7 @@ RUN printf '%s\n' '#!/usr/bin/env bash' 'exec node /openclaw/dist/entry.js "$@"'
   && chmod +x /usr/local/bin/openclaw
 
 # Copy Winston wrapper (extends template with sidecar endpoints)
-COPY src ./src
+COPY docker/openclaw-tenant/src ./src
 
 # The wrapper listens on this port
 ENV OPENCLAW_PUBLIC_PORT=8080
