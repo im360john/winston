@@ -35,11 +35,11 @@ async function provisionToRailway(tenant, configs) {
     // Step 1: Create project (or use existing)
     const projectId = await getOrCreateProject();
 
-    // Step 2: Create service WITHOUT source (no deployment triggered)
+    // Step 2: Create service with GitHub source
     const serviceId = await createService(projectId, tenant);
 
-    // Step 3: Set all environment variables while service has no source
-    // No deployments triggered since there's nothing to deploy
+    // Step 3: Set ALL environment variables in single batch with skipDeploys=true
+    // This prevents deployment while we configure the service
     await setEnvironmentVariables(projectId, serviceId, tenant, configs);
 
     // Step 4: Create volume for configs (if supported)
@@ -48,8 +48,8 @@ async function provisionToRailway(tenant, configs) {
     // Step 5: Upload config files to volume
     await uploadConfigs(projectId, serviceId, volumeId, configs);
 
-    // Step 6: Connect GitHub source - THIS triggers the FIRST deployment
-    await connectServiceSource(serviceId);
+    // Step 6: Trigger deployment NOW that all variables are set
+    const deployment = await deployImage(projectId, serviceId);
 
     // Step 7: Wait for deployment to complete and get public URL
     const url = await getServiceUrl(projectId, serviceId);
@@ -140,8 +140,8 @@ async function getOrCreateProject() {
 }
 
 /**
- * Create a new service in Railway WITHOUT source
- * This prevents any deployment until we're ready
+ * Create service with source (will trigger deployments)
+ * Railway doesn't support adding source after creation
  */
 async function createService(projectId, tenant) {
   const serviceName = `tenant-${tenant.id.slice(0, 8)}`;
@@ -150,7 +150,10 @@ async function createService(projectId, tenant) {
     mutation {
       serviceCreate(input: {
         projectId: "${projectId}",
-        name: "${serviceName}"
+        name: "${serviceName}",
+        source: {
+          repo: "vignesh07/clawdbot-railway-template"
+        }
       }) {
         id
         name
@@ -162,7 +165,7 @@ async function createService(projectId, tenant) {
   const serviceId = response.data.serviceCreate.id;
 
   console.log(`[Railway] Created service: ${serviceId} (${serviceName})`);
-  console.log(`[Railway] Service created without source - no deployment yet`);
+  console.log(`[Railway] Note: Multiple deployments will trigger (Railway API limitation)`);
   return serviceId;
 }
 
@@ -268,13 +271,13 @@ async function uploadConfigs(projectId, serviceId, volumeId, configs) {
 }
 
 /**
- * Set environment variables for the service
- * Sets all variables rapidly to minimize deployment triggers
+ * Set environment variables for the service using variableCollectionUpsert
+ * This sets ALL variables in a single mutation with skipDeploys option
  */
 async function setEnvironmentVariables(projectId, serviceId, tenant, configs) {
   const variables = {
     // OpenClaw required variables
-    SETUP_PASSWORD: configs.gatewayToken.slice(0, 16), // Use part of gateway token as setup password
+    SETUP_PASSWORD: configs.gatewayToken.slice(0, 16),
     PORT: '8080',
     OPENCLAW_GATEWAY_TOKEN: configs.gatewayToken,
     OPENCLAW_STATE_DIR: '/data/.openclaw',
@@ -286,35 +289,30 @@ async function setEnvironmentVariables(projectId, serviceId, tenant, configs) {
     WINSTON_TIER: tenant.tier
   };
 
-  // Get environment ID (use production environment)
+  // Get environment ID
   const envId = await getEnvironmentId(projectId);
 
-  console.log('[Railway] Setting all environment variables (batch mode)...');
+  console.log('[Railway] Setting all environment variables in single batch...');
 
-  // Set all variables in parallel to minimize time window for multiple deployments
-  const variablePromises = Object.entries(variables).map(([key, value]) => {
-    const mutation = `
-      mutation {
-        variableUpsert(input: {
-          projectId: "${projectId}",
-          environmentId: "${envId}",
-          serviceId: "${serviceId}",
-          name: "${key}",
-          value: "${value.replace(/"/g, '\\"')}"
-        })
-      }
-    `;
+  // Use variableCollectionUpsert to set all variables at once with skipDeploys
+  const mutation = `
+    mutation variableCollectionUpsert($input: VariableCollectionUpsertInput!) {
+      variableCollectionUpsert(input: $input)
+    }
+  `;
 
-    return railwayRequest(mutation).then(() => {
-      console.log(`[Railway] ✓ ${key}`);
-    });
-  });
+  const variablesInput = {
+    input: {
+      projectId: projectId,
+      environmentId: envId,
+      serviceId: serviceId,
+      variables: variables,
+      skipDeploys: true  // CRITICAL: Prevents deployment on variable update
+    }
+  };
 
-  await Promise.all(variablePromises);
-  console.log('[Railway] All environment variables set');
-
-  // Wait a moment for Railway to process the updates
-  await new Promise(resolve => setTimeout(resolve, 5000));
+  await railwayRequest(mutation, variablesInput);
+  console.log('[Railway] All environment variables set (deployment skipped)');
 }
 
 /**
@@ -431,10 +429,8 @@ async function getServiceUrl(projectId, serviceId) {
 /**
  * Make a GraphQL request to Railway API
  */
-async function railwayRequest(query) {
+async function railwayRequest(query, variables = null) {
   try {
-    // Use environment variable to determine token type
-    // Default to Bearer (Account/Workspace token) for broader access
     const useProjectToken = process.env.RAILWAY_USE_PROJECT_TOKEN === 'true';
 
     const headers = {
@@ -447,16 +443,23 @@ async function railwayRequest(query) {
       headers['Authorization'] = `Bearer ${RAILWAY_API_TOKEN}`;
     }
 
+    // Build request body
+    const requestBody = { query };
+    if (variables) {
+      requestBody.variables = variables;
+    }
+
     // Debug logging
     if (process.env.DEBUG_RAILWAY) {
       console.log('[Railway Debug] URL:', RAILWAY_API_URL);
       console.log('[Railway Debug] Headers:', headers);
       console.log('[Railway Debug] Query:', query.substring(0, 100));
+      console.log('[Railway Debug] Variables:', JSON.stringify(variables));
     }
 
     const response = await axios.post(
       RAILWAY_API_URL,
-      { query },
+      requestBody,
       { headers }
     );
 
