@@ -441,37 +441,106 @@ async function railwayRequest(query) {
 }
 
 /**
- * Configure OpenClaw via setup API
+ * Configure OpenClaw via setup wizard using Puppeteer
  */
 async function configureOpenClaw(url, setupPassword, openclawConfig) {
-  console.log('[Railway] Configuring OpenClaw via setup API...');
+  console.log('[Railway] Configuring OpenClaw via setup wizard...');
 
-  const axios = require('axios');
+  const puppeteer = require('puppeteer');
+  let browser;
 
   try {
-    // Access the setup endpoint with authentication
-    const response = await axios.post(
-      `${url}/api/setup/config`,
-      { config: openclawConfig },
-      {
-        auth: {
-          username: 'setup',
-          password: setupPassword
-        },
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        timeout: 10000
-      }
-    );
+    // Launch headless browser
+    browser = await puppeteer.launch({
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox']
+    });
 
-    console.log('[Railway] OpenClaw configuration uploaded successfully');
-    return response.data;
+    const page = await browser.newPage();
+
+    // Navigate to setup page
+    console.log('[Railway] Navigating to setup page...');
+    await page.goto(`${url}/setup`, { waitUntil: 'networkidle0', timeout: 30000 });
+
+    // Check if password input exists
+    const passwordInput = await page.$('input[type="password"]');
+    if (!passwordInput) {
+      throw new Error('Password input not found on setup page');
+    }
+
+    // Enter password
+    console.log('[Railway] Entering setup password...');
+    await page.type('input[type="password"]', setupPassword);
+
+    // Submit password form
+    const submitButton = await page.$('button[type="submit"], input[type="submit"], button:has-text("Submit"), button:has-text("Continue")');
+    if (submitButton) {
+      await Promise.all([
+        submitButton.click(),
+        page.waitForNavigation({ waitUntil: 'networkidle0', timeout: 10000 }).catch(() => {})
+      ]);
+    }
+
+    // Wait a bit for the page to load
+    await page.waitForTimeout(2000);
+
+    // Look for config textarea or upload area
+    console.log('[Railway] Looking for config editor...');
+    const configTextarea = await page.$('textarea');
+
+    if (configTextarea) {
+      // Clear existing content and paste config
+      console.log('[Railway] Uploading OpenClaw configuration...');
+      await configTextarea.click({ clickCount: 3 }); // Select all
+      await configTextarea.press('Backspace');
+      await configTextarea.type(JSON.stringify(openclawConfig, null, 2), { delay: 10 });
+
+      // Find and click save/submit button
+      const saveButton = await page.$('button:has-text("Save"), button:has-text("Upload"), button:has-text("Continue"), button[type="submit"]');
+      if (saveButton) {
+        await saveButton.click();
+        await page.waitForTimeout(2000);
+      }
+
+      console.log('[Railway] OpenClaw configuration uploaded successfully');
+    } else {
+      console.log('[Railway] Config textarea not found, checking for file upload...');
+
+      // Look for file upload input
+      const fileInput = await page.$('input[type="file"]');
+      if (fileInput) {
+        // Create temporary file with config
+        const fs = require('fs');
+        const tmpFile = '/tmp/openclaw-config.json';
+        fs.writeFileSync(tmpFile, JSON.stringify(openclawConfig, null, 2));
+
+        await fileInput.uploadFile(tmpFile);
+        await page.waitForTimeout(1000);
+
+        // Click upload button
+        const uploadButton = await page.$('button:has-text("Upload"), button[type="submit"]');
+        if (uploadButton) {
+          await uploadButton.click();
+          await page.waitForTimeout(2000);
+        }
+
+        console.log('[Railway] OpenClaw configuration uploaded via file');
+      } else {
+        throw new Error('No config input method found');
+      }
+    }
+
+    return { success: true };
+
   } catch (error) {
     console.error('[Railway] Failed to configure OpenClaw:', error.message);
     console.log('[Railway] Manual configuration required at:', `${url}/setup`);
     console.log('[Railway] Setup password:', setupPassword);
-    throw new Error('OpenClaw configuration failed - manual setup required');
+    throw error;
+  } finally {
+    if (browser) {
+      await browser.close();
+    }
   }
 }
 
