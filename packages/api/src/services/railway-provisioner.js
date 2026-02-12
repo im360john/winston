@@ -175,10 +175,12 @@ async function connectServiceSource(serviceId) {
 
   const mutation = `
     mutation {
-      serviceConnect(input: {
-        serviceId: "${serviceId}",
-        repo: "vignesh07/clawdbot-railway-template"
-      }) {
+      serviceConnect(
+        id: "${serviceId}",
+        input: {
+          repo: "vignesh07/clawdbot-railway-template"
+        }
+      ) {
         id
       }
     }
