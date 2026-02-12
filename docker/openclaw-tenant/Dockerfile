@@ -11,12 +11,12 @@ RUN npm install -g openclaw || echo "OpenClaw install pending"
 
 # Install sidecar dependencies
 WORKDIR /winston
-COPY package.json /winston/package.json
+COPY docker/openclaw-tenant/package.json /winston/package.json
 RUN npm install --production
 
 # Add Winston components (wrapping layer only)
-COPY sidecar.js /winston/sidecar.js
-COPY entrypoint.sh /winston/entrypoint.sh
+COPY docker/openclaw-tenant/sidecar.js /winston/sidecar.js
+COPY docker/openclaw-tenant/entrypoint.sh /winston/entrypoint.sh
 RUN chmod +x /winston/entrypoint.sh
 
 # Create data directory for persistent volume
