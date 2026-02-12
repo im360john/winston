@@ -100,8 +100,8 @@ export function setupWinstonSidecar(app, STATE_DIR) {
   });
 
   // List files in a directory
-  app.get('/winston/files/:0*', winstonAuth, (req, res) => {
-    const filePath = path.join(STATE_DIR, req.params[0] || '');
+  app.get('/winston/files/:path(*)', winstonAuth, (req, res) => {
+    const filePath = path.join(STATE_DIR, req.params.path || '');
 
     // Security: prevent path traversal
     if (!filePath.startsWith(STATE_DIR)) {
@@ -149,8 +149,8 @@ export function setupWinstonSidecar(app, STATE_DIR) {
   });
 
   // Write file
-  app.put('/winston/files/:0*', winstonAuth, (req, res) => {
-    const filePath = path.join(STATE_DIR, req.params[0]);
+  app.put('/winston/files/:path(*)', winstonAuth, (req, res) => {
+    const filePath = path.join(STATE_DIR, req.params.path);
     const { content } = req.body;
 
     if (!content) {
