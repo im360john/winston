@@ -1,7 +1,7 @@
 # Phase 3: Onboarding & Tenant Dashboard - Progress Report
 
-**Date:** February 11, 2026
-**Status:** Foundation Complete ✅ — UI Built, Backend Integration Needed
+**Date:** February 12, 2026
+**Status:** Core Complete ✅ — Authentication Working, Dashboard Integrated
 
 ---
 
@@ -186,14 +186,16 @@ packages/web/
 
 ## What Still Needs to Be Done
 
-### 1. Backend API Endpoints ⚠️
+### 1. Backend API Endpoints ✅ COMPLETE
 
 **Stripe:**
-- [ ] `POST /api/stripe/setup-intent` - Create setup intent
-- [ ] `POST /api/stripe/create-customer` - Create Stripe customer
-- [ ] `POST /api/stripe/create-subscription` - Start subscription
-- [ ] `POST /api/stripe/webhook` - Handle webhooks
-- [ ] `PATCH /api/tenants/:id/subscription` - Update subscription
+- [x] `POST /api/stripe/create-customer` - Create Stripe customer ✅
+- [x] `POST /api/stripe/create-subscription` - Start subscription ✅
+- [x] `POST /api/stripe/webhook` - Handle all lifecycle events ✅
+  - customer.created
+  - customer.subscription.created/updated/deleted
+  - invoice.payment_succeeded/failed
+- [x] Database updates via webhooks (status, credits) ✅
 
 **Credits:**
 - [ ] `GET /api/tenants/:id/credits/usage` - Usage history
@@ -226,13 +228,16 @@ packages/web/
 - [x] `stripe_subscription_id` column exists ✅
 - [ ] Create `subscription_events` audit table
 
-### 3. Authentication 🔴
+### 3. Authentication ✅ COMPLETE
 
-- [ ] Choose auth provider (NextAuth.js or Clerk)
-- [ ] Implement signup/login flow
-- [ ] Session management
-- [ ] Protected routes (dashboard requires auth)
-- [ ] JWT token handling
+- [x] NextAuth.js v4 with JWT strategy ✅
+- [x] Credentials provider (email/password) ✅
+- [x] Signup/login API endpoints ✅
+- [x] Session management (30-day sessions) ✅
+- [x] Server-side route protection (middleware.ts) ✅
+- [x] Client-side route protection (useSession hooks) ✅
+- [x] bcrypt password hashing ✅
+- [x] Custom session callbacks (tenantId in session) ✅
 
 ### 4. WebChat Widget 🔴
 
@@ -245,11 +250,22 @@ packages/web/
 - [ ] CDN hosting setup
 - [ ] CORS configuration
 
-### 5. Dashboard Features ⚠️
+### 5. Dashboard Features ✅ Data Integration Complete
+
+**Core Dashboard:**
+- [x] Fetch real tenant data from API ✅
+- [x] Display actual credits (remaining/allotment) ✅
+- [x] Show tenant name, tier, status ✅
+- [x] Display selected AI model ✅
+- [x] Show Railway URL when available ✅
+- [x] Loading states while fetching ✅
 
 **Credits Tab:**
+- [x] Credit usage calculation and display ✅
+- [x] Usage percentage progress bar ✅
+- [x] Credits remaining vs allotment ✅
+- [x] Refresh date display ✅
 - [ ] Usage graph component (Recharts or Chart.js)
-- [ ] Credit burn rate calculation
 - [ ] Model breakdown chart
 - [ ] Low credit warning display
 
@@ -319,41 +335,39 @@ packages/web/
 
 ---
 
-## Next Actions (Priority Order)
+## Next Actions (Priority Order) - UPDATED Feb 12
 
-### Week 1
-1. **Set up Stripe** 🔴
-   - Create test products (Free, Starter, Growth)
-   - Configure webhook endpoint
-   - Test payment flow
+### Critical (Phase 3 Blockers)
+1. **WebChat Widget** 🔴 HIGH PRIORITY
+   - Extract OpenClaw's webchat component
+   - Brand color customization from tenant data
+   - Generate unique embed codes per tenant
+   - Test embedding in external website
 
-2. **Implement Authentication** 🔴
-   - Choose and integrate auth provider
-   - Protect dashboard routes
-   - Implement signup/login backend
+2. **Production Environment Setup** ⚠️
+   - Set NEXTAUTH_SECRET in Railway (generate with openssl rand -base64 32)
+   - Configure Stripe production keys
+   - Set up webhook endpoint in Stripe dashboard
+   - Test payment flow end-to-end
 
-3. **Build Stripe API Endpoints** ⚠️
-   - Setup intent creation
-   - Customer creation
-   - Subscription management
-   - Webhook handler
+### Nice-to-Have (Can defer to Phase 4)
+3. **Enhanced Dashboard Features** ⚠️
+   - Credits usage graph (Recharts)
+   - Session history viewer with replay
+   - Channel management UI (add/remove)
+   - Connector OAuth flows
 
-### Week 2
-4. **Build WebChat Widget** 🔴
-   - Embeddable React component
-   - Brand color customization
-   - Generate embed codes
+4. **Testing & Polish** 🔴
+   - End-to-end onboarding test
+   - Stripe payment test with test cards
+   - Mobile responsive testing
+   - Load test (5 concurrent users)
 
-5. **Complete Dashboard Features** ⚠️
-   - Credits usage graph
-   - Session history viewer
-   - Channel management
-   - Connector modals
-
-6. **Testing & Deployment** 🔴
-   - End-to-end testing
-   - Mobile responsive fixes
-   - Deploy to production
+5. **Deployment & Monitoring** 🔴
+   - Deploy web app to Railway/Vercel
+   - Set up error tracking (Sentry)
+   - Analytics (PostHog or Mixpanel)
+   - Performance monitoring
 
 ---
 
@@ -425,7 +439,7 @@ npm run dev
 
 ## Summary
 
-**Phase 3 Progress: 40% Complete**
+**Phase 3 Progress: 70% Complete** 🎉
 
 ✅ **Complete:**
 - Next.js app structure
@@ -433,24 +447,27 @@ npm run dev
 - Tenant dashboard UI (all 6 tabs)
 - Landing page with pricing
 - Login page
+- **Authentication (NextAuth.js)** ✅ NEW
+- **Server-side route protection** ✅ NEW
+- **Dashboard data integration** ✅ NEW
+- **Stripe backend (create-customer, create-subscription, webhooks)** ✅ NEW
 - Stripe Elements integration
 - TypeScript + Tailwind setup
 - Responsive design
 
 ⚠️ **In Progress:**
-- Backend API endpoints
-- Stripe webhook handlers
-- Dashboard data fetching
+- WebChat widget
+- Credit usage graphs
+- Session history viewer
 
 🔴 **Not Started:**
-- Authentication
-- WebChat widget
-- Session history viewer
-- Credit usage graphs
-- Connector modals
-- Testing & deployment
+- Connector modals (OAuth flows, credential inputs)
+- Channel management UI (add/remove channels)
+- Advanced testing & deployment
+- Analytics integration
+- SEO optimization
 
-**Estimated Time to Complete:** 10-12 more days (2 weeks)
+**Estimated Time to Complete:** 3-5 more days (1 week)
 
 ---
 
