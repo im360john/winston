@@ -22,6 +22,7 @@ const websiteRouter = require('./routes/website');
 const authRouter = require('./routes/auth');
 const stripeRouter = require('./routes/stripe');
 const stripeWebhookRouter = require('./routes/stripe-webhook');
+const activityRouter = require('./routes/activity');
 
 const app = express();
 const PORT = process.env.PORT || process.env.WINSTON_API_PORT || 3001;
@@ -48,6 +49,7 @@ app.use('/api/auth', authRouter);
 app.use('/api/tenants', tenantsRouter);
 app.use('/api/website', websiteRouter);
 app.use('/api/stripe', stripeRouter);
+app.use('/api/activity', activityRouter);
 
 // Error handling
 app.use((err, req, res, next) => {
