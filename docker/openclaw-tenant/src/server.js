@@ -254,6 +254,20 @@ async function waitForGatewayReady(opts = {}) {
   return false;
 }
 
+async function probeGateway() {
+  // Fast liveness check for /healthz. Any HTTP response indicates the gateway is up.
+  const paths = ["/openclaw", "/clawdbot", "/"];
+  for (const p of paths) {
+    try {
+      const res = await fetch(`${GATEWAY_TARGET}${p}`, { method: "GET" });
+      if (res) return true;
+    } catch {
+      // try next
+    }
+  }
+  return false;
+}
+
 async function startGateway() {
   if (gatewayProc) return;
   if (!isConfigured()) throw new Error("Gateway cannot start: not configured");
