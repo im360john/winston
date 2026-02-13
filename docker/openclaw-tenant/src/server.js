@@ -134,6 +134,89 @@ function isConfigured() {
   }
 }
 
+function looksLikeBase64(s) {
+  const v = String(s || "").trim();
+  if (!v) return false;
+  // Heuristic: base64 charset, reasonable length, and padded/4-aligned.
+  if (v.length < 16) return false;
+  if (v.length % 4 !== 0) return false;
+  return /^[A-Za-z0-9+/=]+$/.test(v);
+}
+
+function decodeEnvText(raw) {
+  const v = String(raw || "").trim();
+  if (!v) return null;
+  // If it already looks like text/json/markdown, keep it as-is.
+  if (v.startsWith("{") || v.startsWith("[") || v.startsWith("#") || v.startsWith("---")) return v;
+
+  if (looksLikeBase64(v)) {
+    try {
+      const out = Buffer.from(v, "base64").toString("utf8").trimEnd();
+      if (out) return out;
+    } catch {
+      // fall through
+    }
+  }
+
+  return v;
+}
+
+function writeFileIfMissing(filePath, content, mode) {
+  try {
+    if (fs.existsSync(filePath)) return false;
+  } catch {
+    // ignore
+  }
+
+  try {
+    fs.mkdirSync(path.dirname(filePath), { recursive: true, mode: 0o700 });
+  } catch {
+    // ignore
+  }
+
+  try {
+    fs.writeFileSync(filePath, content, { encoding: "utf8", mode: mode ?? 0o600 });
+    return true;
+  } catch (err) {
+    console.error(`[bootstrap] Failed to write ${filePath}: ${String(err?.message || err)}`);
+    return false;
+  }
+}
+
+function bootstrapFromEnvBestEffort() {
+  // If already configured, do nothing.
+  if (isConfigured()) return;
+
+  // Ensure the state/workspace roots exist with restricted perms where possible.
+  try { fs.mkdirSync(STATE_DIR, { recursive: true, mode: 0o700 }); } catch {}
+  try { fs.mkdirSync(WORKSPACE_DIR, { recursive: true, mode: 0o700 }); } catch {}
+  // OpenClaw expects this path to exist for auth providers; doctor flags it as CRITICAL if missing.
+  try { fs.mkdirSync(path.join(STATE_DIR, "credentials"), { recursive: true, mode: 0o700 }); } catch {}
+
+  const mappings = [
+    { env: "WINSTON_OPENCLAW_JSON", rel: "openclaw.json", mode: 0o600 },
+    { env: "WINSTON_SOUL_MD", rel: "SOUL.md", mode: 0o644 },
+    { env: "WINSTON_AGENTS_MD", rel: "AGENTS.md", mode: 0o644 },
+    { env: "WINSTON_USER_MD", rel: "USER.md", mode: 0o644 },
+    { env: "WINSTON_IDENTITY_MD", rel: "IDENTITY.md", mode: 0o644 },
+  ];
+
+  let wroteAny = false;
+  for (const m of mappings) {
+    const decoded = decodeEnvText(process.env[m.env]);
+    if (!decoded) continue;
+    const p = path.join(STATE_DIR, m.rel);
+    wroteAny = writeFileIfMissing(p, decoded.endsWith("\n") ? decoded : decoded + "\n", m.mode) || wroteAny;
+  }
+
+  // Make the state dir less permissive if we created it. Best-effort.
+  try { fs.chmodSync(STATE_DIR, 0o700); } catch {}
+
+  if (wroteAny) {
+    console.log("[bootstrap] Hydrated initial config/files into state dir from WINSTON_* env vars.");
+  }
+}
+
 let gatewayProc = null;
 let gatewayStarting = null;
 
@@ -298,6 +381,10 @@ function requireSetupAuth(req, res, next) {
 const app = express();
 app.disable("x-powered-by");
 app.use(express.json({ limit: "1mb" }));
+
+// For new tenants, the provisioner supplies initial config + MD files via env vars.
+// Hydrate them into /data/.openclaw so the gateway can auto-start and sidecar can show files.
+bootstrapFromEnvBestEffort();
 
 // Setup Winston sidecar API for live file management
 setupWinstonSidecar(app, STATE_DIR);
