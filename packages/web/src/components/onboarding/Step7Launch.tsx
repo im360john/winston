@@ -8,12 +8,13 @@ import type { OnboardingData } from '@/app/onboarding/page'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'
 
-// Stripe Price IDs for each tier
+// Stripe Price IDs for each tier (non-secret). Prefer env so prod matches your Stripe account.
+// If missing, onboarding will skip subscription creation instead of blocking provisioning.
 const PRICE_IDS = {
-  free: 'price_1SzmQMLW1QhY1aU5dfxxgBW3',
-  starter: 'price_1SzmQaLW1QhY1aU5eJmM4Vg9',
-  growth: 'price_1SzmQlLW1QhY1aU5JKyFWgot',
-}
+  free: process.env.NEXT_PUBLIC_STRIPE_PRICE_ID_FREE,
+  starter: process.env.NEXT_PUBLIC_STRIPE_PRICE_ID_STARTER,
+  growth: process.env.NEXT_PUBLIC_STRIPE_PRICE_ID_GROWTH,
+} as const
 
 const MODELS = [
   {
@@ -68,6 +69,19 @@ export default function Step7Launch({
     setProgress([])
 
     try {
+      if (!data.email || !data.password) {
+        throw new Error('Missing email/password from Step 1')
+      }
+      if (!data.businessName) {
+        throw new Error('Missing business name from Step 2')
+      }
+      if (!data.agentName || !data.personality || !data.tone) {
+        throw new Error('Missing agent identity from Step 3')
+      }
+      if (!data.tier) {
+        throw new Error('Missing tier selection')
+      }
+
       // Step 1: Create tenant
       setProgress(['Creating your agent...'])
       const tenantResponse = await axios.post(`${API_URL}/api/tenants`, {
@@ -82,33 +96,47 @@ export default function Step7Launch({
 
       const tenantId = tenantResponse.data.tenant.id
 
-      // Step 2: Create Stripe customer
-      setProgress(prev => [...prev, 'Setting up payment...'])
-      const customerResponse = await axios.post(`${API_URL}/api/stripe/create-customer`, {
-        email: data.email,
-        paymentMethodId: data.paymentMethodId,
-        name: data.businessName,
-      })
+      // Step 2: Optional Stripe billing
+      // Keep provisioning unblocked even if billing isn't configured yet.
+      let customerId: string | undefined
+      let subscriptionId: string | undefined
+      try {
+        const isFree = data.tier === 'free'
+        const priceId = PRICE_IDS[data.tier as keyof typeof PRICE_IDS]
 
-      const customerId = customerResponse.data.customerId
+        if (data.paymentMethodId) {
+          setProgress(prev => [...prev, 'Setting up payment...'])
+          const customerResponse = await axios.post(`${API_URL}/api/stripe/create-customer`, {
+            email: data.email,
+            paymentMethodId: data.paymentMethodId,
+            name: data.businessName,
+          })
+          customerId = customerResponse.data.customerId
 
-      // Step 3: Create Stripe subscription
-      const priceId = PRICE_IDS[data.tier as keyof typeof PRICE_IDS]
-      const subscriptionResponse = await axios.post(`${API_URL}/api/stripe/create-subscription`, {
-        customerId: customerId,
-        priceId: priceId,
-        tenantId: tenantId,
-      })
+          if (!isFree && priceId) {
+            const subscriptionResponse = await axios.post(`${API_URL}/api/stripe/create-subscription`, {
+              customerId,
+              priceId,
+              tenantId,
+            })
+            subscriptionId = subscriptionResponse.data.subscriptionId
+          }
 
-      const subscriptionId = subscriptionResponse.data.subscriptionId
+          if (customerId || subscriptionId) {
+            await axios.patch(`${API_URL}/api/tenants/${tenantId}`, {
+              ...(customerId ? { stripe_customer_id: customerId } : null),
+              ...(subscriptionId ? { stripe_subscription_id: subscriptionId } : null),
+            })
+          }
+        } else {
+          setProgress(prev => [...prev, 'Payment method skipped (you can add billing later)...'])
+        }
+      } catch (billingErr) {
+        console.warn('[Onboarding] Billing setup failed, continuing:', billingErr)
+        setProgress(prev => [...prev, 'Payment setup failed (continuing without billing)...'])
+      }
 
-      // Step 4: Update tenant with Stripe IDs
-      await axios.patch(`${API_URL}/api/tenants/${tenantId}`, {
-        stripe_customer_id: customerId,
-        stripe_subscription_id: subscriptionId,
-      })
-
-      // Step 5: Create user account
+      // Step 3: Create user account
       setProgress(prev => [...prev, 'Creating your account...'])
       await axios.post(`${API_URL}/api/auth/signup`, {
         email: data.email,
@@ -117,15 +145,7 @@ export default function Step7Launch({
         tenantId: tenantId,
       })
 
-      // Step 6: Sign in the user
-      setProgress(prev => [...prev, 'Signing you in...'])
-      await signIn('credentials', {
-        email: data.email,
-        password: data.password,
-        redirect: false,
-      })
-
-      // Step 7: Provision to Railway
+      // Step 4: Provision to Railway
       setProgress(prev => [...prev, 'Generating configs...'])
       await new Promise(resolve => setTimeout(resolve, 1000))
 
@@ -138,10 +158,10 @@ export default function Step7Launch({
           tone: data.tone,
           capabilities: data.capabilities,
           channels: {
-            telegram: data.channels?.telegram || false,
-            slack: data.channels?.slack || false,
-            whatsapp: data.channels?.whatsapp || false,
-            webchat: data.channels?.webchat || true,
+            telegram: data.channels?.telegram ?? false,
+            slack: data.channels?.slack ?? false,
+            whatsapp: data.channels?.whatsapp ?? false,
+            webchat: data.channels?.webchat ?? true,
           },
           telegramBotToken: data.telegramBotToken,
         },
@@ -152,11 +172,25 @@ export default function Step7Launch({
 
       console.log('[Onboarding] Provision complete:', provisionResponse.data)
 
-      // Step 8: Connect channels
+      // Step 5: Sign in the user (after provisioning completes)
+      setProgress(prev => [...prev, 'Signing you in...'])
+      const signInResult = await signIn('credentials', {
+        email: data.email,
+        password: data.password,
+        redirect: false,
+      })
+      if (signInResult?.error) {
+        console.warn('[Onboarding] Sign-in failed after provisioning:', signInResult.error)
+        setProgress(prev => [...prev, 'Sign-in failed (redirecting to login)...'])
+        router.push(`/login?tenant=${tenantId}`)
+        return
+      }
+
+      // Step 6: Connect channels (placeholder)
       setProgress(prev => [...prev, 'Connecting channels...'])
       await new Promise(resolve => setTimeout(resolve, 1000))
 
-      // Step 9: Done!
+      // Step 7: Done!
       setProgress(prev => [...prev, `${data.agentName} is live! 🎉`])
       await new Promise(resolve => setTimeout(resolve, 1500))
 
