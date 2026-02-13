@@ -32,7 +32,9 @@ async function checkCredits(tenantId) {
         credits_monthly_allotment,
         selected_model,
         tier,
-        status
+        status,
+        stripe_customer_id,
+        stripe_subscription_id
       FROM tenants
       WHERE id = $1`,
       [tenantId]
@@ -58,13 +60,24 @@ async function checkCredits(tenantId) {
 
     const multiplier = MODEL_MULTIPLIERS[tenant.selected_model] || 1.0;
 
+    // Billing gating (temporary simple rules)
+    // - free/unlimited: always allowed
+    // - starter/growth: require an active Stripe subscription id on the tenant record
+    // This lets onboarding provision even if billing fails, but blocks paid-tier usage until billing is attached.
+    let billingStatus = 'ok';
+    const paidTiers = new Set(['starter', 'growth']);
+    if (paidTiers.has(String(tenant.tier))) {
+      if (!tenant.stripe_subscription_id) billingStatus = 'unpaid';
+    }
+
     return {
       hasCredits: tenant.credits_remaining > 0,
       credits: parseFloat(tenant.credits_remaining),
       monthlyAllotment: parseFloat(tenant.credits_monthly_allotment),
       model: tenant.selected_model,
       multiplier,
-      tier: tenant.tier
+      tier: tenant.tier,
+      billingStatus
     };
 
   } catch (error) {

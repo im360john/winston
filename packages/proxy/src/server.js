@@ -52,6 +52,21 @@ app.post('/v1/messages', async (req, res) => {
     // Check credit balance
     const creditCheck = await checkCredits(tenantId);
 
+    // Billing gate (see metering.js)
+    if (creditCheck.billingStatus && creditCheck.billingStatus !== 'ok') {
+      console.log(`[Proxy] Billing blocked for tenant ${tenantId} (tier=${creditCheck.tier})`);
+      res.set({
+        'X-Winston-Billing-Status': creditCheck.billingStatus
+      });
+      return res.status(402).json({
+        error: 'winston_billing_required',
+        message: 'Billing is required to use this plan. Please add a payment method or downgrade to Free.',
+        billing_status: creditCheck.billingStatus,
+        tier: creditCheck.tier,
+        billing_url: `${process.env.WINSTON_WEB_URL || ''}/dashboard?tab=billing`
+      });
+    }
+
     if (!creditCheck.hasCredits) {
       console.log(`[Proxy] Credits exhausted for tenant ${tenantId}`);
       return res.status(402).json({
