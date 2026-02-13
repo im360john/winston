@@ -42,6 +42,20 @@ tested=$((tested+1))
     minimal_cfg="$(cat <<'JSON'
 {
   "meta": { "lastTouchedVersion": "winston-admin-e2e" },
+  "gateway": { "mode": "local", "bind": "loopback" },
+  "models": {
+    "mode": "merge",
+    "providers": {
+      "winston": {
+        "baseUrl": "https://winston-llm-proxy-production.up.railway.app",
+        "apiKey": "winston-TENANT_ID",
+        "api": "openai-completions",
+        "models": [
+          { "id": "kimi-k2.5", "name": "Kimi K2.5" }
+        ]
+      }
+    }
+  },
   "agents": { "defaults": { "model": { "primary": "winston/kimi-k2.5" } } }
 }
 JSON

@@ -2,6 +2,10 @@
   "meta": {
     "lastTouchedVersion": "winston"
   },
+  "gateway": {
+    "mode": "local",
+    "bind": "loopback"
+  },
   "models": {
     "mode": "merge",
     "providers": {
@@ -56,4 +60,3 @@
     }
   }
 }
-

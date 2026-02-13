@@ -119,6 +119,18 @@ export default function TenantDetailPage() {
       return JSON.stringify(
         {
           meta: { lastTouchedVersion: 'winston-admin' },
+          gateway: { mode: 'local', bind: 'loopback' },
+          models: {
+            mode: 'merge',
+            providers: {
+              winston: {
+                baseUrl: 'https://winston-llm-proxy-production.up.railway.app',
+                apiKey: 'winston-<TENANT_ID>',
+                api: 'openai-completions',
+                models: [{ id: 'kimi-k2.5', name: 'Kimi K2.5' }],
+              },
+            },
+          },
           agents: { defaults: { model: { primary: 'winston/kimi-k2.5' } } },
         },
         null,
