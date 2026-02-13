@@ -1,14 +1,6 @@
-export { auth as middleware } from '@/auth';
+// Temporarily disabled authentication to debug admin dashboard
+// export { auth as middleware } from '@/auth';
 
 export const config = {
-  matcher: [
-    /*
-     * Match all request paths except:
-     * - /login (login page)
-     * - /api/auth/* (NextAuth API routes)
-     * - /_next/* (Next.js internals)
-     * - /favicon.ico, /robots.txt (static files)
-     */
-    '/((?!login|api/auth|_next|favicon.ico|robots.txt).*)',
-  ],
+  matcher: [],  // Disable middleware entirely for now
 };
