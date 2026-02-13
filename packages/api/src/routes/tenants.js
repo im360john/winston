@@ -218,9 +218,17 @@ router.post('/:id/provision', async (req, res, next) => {
     await pool.query(`
       INSERT INTO tenant_instances (
         tenant_id, instance_name, railway_service_id,
+        railway_domain, sidecar_token, setup_password,
         status, config_version
-      ) VALUES ($1, $2, $3, 'running', '1.0')
-    `, [id, `${tenant.name} Gateway`, provisionResult.serviceId]);
+      ) VALUES ($1, $2, $3, $4, $5, $6, 'running', '1.0')
+    `, [
+      id,
+      `${tenant.name} Gateway`,
+      provisionResult.serviceId,
+      provisionResult.url?.replace('https://', '') || null,
+      provisionResult.sidecarToken,
+      provisionResult.setupPassword
+    ]);
 
     console.log(`[API] Tenant ${id} provisioned successfully`);
 
@@ -350,6 +358,42 @@ router.delete('/:id', async (req, res, next) => {
     console.log(`[API] Deleted tenant ${id}`);
 
     res.json({ message: 'Tenant deleted successfully' });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * GET /api/tenants/:id/instance
+ * Get tenant instance details for admin dashboard (includes sidecar token and domain)
+ */
+router.get('/:id/instance', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    // Get tenant instance
+    const instanceResult = await pool.query(`
+      SELECT
+        tenant_id,
+        railway_service_id,
+        railway_domain,
+        sidecar_token,
+        setup_password,
+        status,
+        health_status,
+        last_health_check,
+        created_at
+      FROM tenant_instances
+      WHERE tenant_id = $1
+    `, [id]);
+
+    if (instanceResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Tenant instance not found' });
+    }
+
+    const instance = instanceResult.rows[0];
+
+    res.json(instance);
   } catch (error) {
     next(error);
   }
