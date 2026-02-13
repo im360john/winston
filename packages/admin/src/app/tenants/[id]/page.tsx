@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import {
   getTenant,
@@ -27,7 +27,9 @@ import clsx from 'clsx';
 
 export default function TenantDetailPage() {
   const params = useParams();
+  const searchParams = useSearchParams();
   const tenantId = params.id as string;
+  const initialFile = searchParams.get('file');
 
   const [tenant, setTenant] = useState<Tenant | null>(null);
   const [sidecarClient, setSidecarClient] = useState<SidecarClient | null>(null);
@@ -49,6 +51,23 @@ export default function TenantDetailPage() {
       loadHealth();
     }
   }, [sidecarClient, currentPath]);
+
+  useEffect(() => {
+    if (!sidecarClient) return;
+    if (!initialFile) return;
+    // Open a specific file directly (useful from list views).
+    // Example: /tenants/:id?file=openclaw.json
+    (async () => {
+      try {
+        const fileContent = await sidecarClient.readFile(initialFile);
+        setEditingFile({ path: initialFile, content: fileContent.content });
+      } catch (err) {
+        console.error('Failed to open initial file:', err);
+      }
+    })();
+    // Only run when sidecarClient is first available; initialFile is stable for the page load.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sidecarClient]);
 
   const loadTenant = async () => {
     try {
@@ -88,6 +107,22 @@ export default function TenantDetailPage() {
       setHealth(healthData);
     } catch (err) {
       console.error('Failed to load health:', err);
+    }
+  };
+
+  const coreFiles = ['openclaw.json', 'SOUL.md', 'AGENTS.md', 'USER.md', 'IDENTITY.md'] as const;
+
+  const openCoreFile = async (path: string) => {
+    if (!sidecarClient) return;
+    try {
+      const fileContent = await sidecarClient.readFile(path);
+      setEditingFile({ path, content: fileContent.content });
+    } catch (err: any) {
+      // If missing, allow creating it.
+      const msg = err?.message || 'Failed to read file';
+      const shouldCreate = window.confirm(`${msg}\n\nCreate ${path}?`);
+      if (!shouldCreate) return;
+      setEditingFile({ path, content: '' });
     }
   };
 
@@ -226,6 +261,29 @@ export default function TenantDetailPage() {
           >
             Restart Gateway →
           </button>
+        </div>
+      </div>
+
+      {/* Core Files */}
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow mb-8">
+        <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+          <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+            Core Files
+          </h2>
+          <div className="text-sm text-gray-500 dark:text-gray-400">
+            Open and edit the key MD/JSON files for this tenant.
+          </div>
+        </div>
+        <div className="p-6 flex flex-wrap gap-3">
+          {coreFiles.map((f) => (
+            <button
+              key={f}
+              onClick={() => openCoreFile(f)}
+              className="px-4 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-sm font-medium text-gray-900 dark:text-white"
+            >
+              {f}
+            </button>
+          ))}
         </div>
       </div>
 
