@@ -1,7 +1,7 @@
 import NextAuth from 'next-auth';
 import Credentials from 'next-auth/providers/credentials';
 
-export const { handlers, auth, signIn, signOut } = NextAuth({
+const config = NextAuth({
   providers: [
     Credentials({
       credentials: {
@@ -52,3 +52,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     },
   },
 });
+
+export const { handlers, auth, signIn, signOut } = config;
+export const { GET, POST } = handlers;
