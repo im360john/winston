@@ -80,6 +80,12 @@ The browser does not talk directly to tenant domains.
 
 This avoids CORS issues and prevents sidecar tokens from being exposed client-side.
 
+## Billing Gate (Current Behavior)
+
+Provisioning is allowed even if billing fails, but the proxy blocks LLM usage for paid tiers until billing is attached:
+- `tier=free` (and `unlimited`) are allowed without Stripe fields.
+- `tier=starter|growth` require `tenants.stripe_subscription_id` to be present, otherwise the proxy returns `402 winston_billing_required`.
+
 ## OpenClaw Version Pin
 
 The tenant image builds OpenClaw from source and is pinned via `docker/openclaw-tenant/Dockerfile` (`OPENCLAW_GIT_REF`).
