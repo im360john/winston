@@ -112,6 +112,25 @@ export default function TenantDetailPage() {
 
   const coreFiles = ['openclaw.json', 'SOUL.md', 'AGENTS.md', 'USER.md', 'IDENTITY.md'] as const;
 
+  function placeholderForCoreFile(path: string) {
+    if (path === 'openclaw.json') {
+      // Minimal schema-valid config stub for OpenClaw v2026.2.x.
+      // (Full tenant config is normally written by provisioning.)
+      return JSON.stringify(
+        {
+          meta: { lastTouchedVersion: 'winston-admin' },
+          agents: { defaults: { model: { primary: 'winston/kimi-k2.5' } } },
+        },
+        null,
+        2
+      ) + '\n';
+    }
+    if (path.endsWith('.md')) {
+      return `# ${path}\n\n`;
+    }
+    return '';
+  }
+
   const openCoreFile = async (path: string) => {
     if (!sidecarClient) return;
     try {
@@ -122,7 +141,7 @@ export default function TenantDetailPage() {
       const msg = err?.message || 'Failed to read file';
       const shouldCreate = window.confirm(`${msg}\n\nCreate ${path}?`);
       if (!shouldCreate) return;
-      setEditingFile({ path, content: '' });
+      setEditingFile({ path, content: placeholderForCoreFile(path) });
     }
   };
 

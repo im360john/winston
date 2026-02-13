@@ -33,32 +33,38 @@ async function generateTenantConfig(tenant, options = {}) {
   const baseConfigPath = path.join(__dirname, '../templates/openclaw-base.json');
   const baseConfig = JSON.parse(await fs.readFile(baseConfigPath, 'utf-8'));
 
-  // Substitute variables in openclaw.json
-  let openclawConfig = JSON.stringify(baseConfig, null, 2);
+  // Build a schema-valid OpenClaw config (v2026.2.x).
+  // Keep template minimal and set tenant-specific values here.
+  const cfg = structuredClone(baseConfig);
 
-  // Ensure all channel properties exist
+  // Provider config for Winston proxy
+  cfg.models = cfg.models || {};
+  cfg.models.providers = cfg.models.providers || {};
+  cfg.models.providers.winston = cfg.models.providers.winston || {};
+  cfg.models.providers.winston.baseUrl = process.env.LLM_PROXY_URL || 'http://localhost:3002';
+  cfg.models.providers.winston.apiKey = `winston-${tenant.id}`;
+  cfg.models.providers.winston.api = cfg.models.providers.winston.api || 'openai-completions';
+
+  // Agent defaults
+  cfg.agents = cfg.agents || {};
+  cfg.agents.defaults = cfg.agents.defaults || {};
+  cfg.agents.defaults.model = cfg.agents.defaults.model || {};
+  cfg.agents.defaults.model.primary = `winston/${tenant.selected_model || 'kimi-k2.5'}`;
+
+  // Channels
   const channelsWithDefaults = {
     telegram: channels.telegram || false,
     slack: channels.slack || false,
-    whatsapp: channels.whatsapp || false,
-    webchat: channels.webchat !== false // default true
   };
 
-  const variables = {
-    '{{TENANT_ID}}': tenant.id,
-    '{{TIER}}': tenant.tier,
-    '{{GATEWAY_TOKEN}}': gatewayToken,
-    '{{LLM_PROXY_URL}}': process.env.LLM_PROXY_URL || 'http://localhost:3002',
-    '{{SELECTED_MODEL}}': tenant.selected_model || 'kimi-k2.5',
-    '"{{TELEGRAM_ENABLED}}"': channelsWithDefaults.telegram.toString(),
-    '{{TELEGRAM_BOT_TOKEN}}': telegramBotToken || '',
-    '"{{SLACK_ENABLED}}"': channelsWithDefaults.slack.toString(),
-    '"{{WHATSAPP_ENABLED}}"': channelsWithDefaults.whatsapp.toString()
-  };
+  cfg.channels = cfg.channels || {};
+  cfg.channels.telegram = cfg.channels.telegram || {};
+  cfg.channels.telegram.enabled = channelsWithDefaults.telegram;
+  cfg.channels.telegram.botToken = telegramBotToken || '';
+  cfg.channels.slack = cfg.channels.slack || {};
+  cfg.channels.slack.enabled = channelsWithDefaults.slack;
 
-  for (const [key, value] of Object.entries(variables)) {
-    openclawConfig = openclawConfig.replace(new RegExp(key, 'g'), value);
-  }
+  const openclawConfig = JSON.stringify(cfg, null, 2);
 
   // Load SOUL.md template
   const soulTemplatePath = path.join(__dirname, '../templates/soul-dispensary.md');
@@ -98,7 +104,7 @@ async function generateTenantConfig(tenant, options = {}) {
     'USER.md': userMd,
     'IDENTITY.md': identityMd,
     gatewayToken,
-    openclawConfig: JSON.parse(openclawConfig) // Parsed object for API calls
+    openclawConfig: cfg // Parsed object for API calls
   };
 }
 

@@ -1,31 +1,18 @@
 {
   "meta": {
-    "lastTouchedVersion": "2026.2.x",
-    "winston": {
-      "tenantId": "{{TENANT_ID}}",
-      "tier": "{{TIER}}",
-      "baselineVersion": "1.0"
-    }
-  },
-  "gateway": {
-    "port": 18789,
-    "mode": "local",
-    "bind": "loopback",
-    "auth": {
-      "mode": "token",
-      "token": "{{GATEWAY_TOKEN}}"
-    }
+    "lastTouchedVersion": "winston"
   },
   "models": {
+    "mode": "merge",
     "providers": {
       "winston": {
-        "baseUrl": "{{LLM_PROXY_URL}}",
-        "apiKey": "winston-{{TENANT_ID}}",
+        "baseUrl": "http://localhost:3002",
+        "apiKey": "winston-00000000-0000-0000-0000-000000000000",
         "api": "openai-completions",
         "models": [
           {
             "id": "kimi-k2.5",
-            "name": "Kimi K2.5 (Default - Most Affordable)",
+            "name": "Kimi K2.5",
             "reasoning": true,
             "input": ["text", "image"],
             "contextWindow": 262000,
@@ -33,7 +20,7 @@
           },
           {
             "id": "claude-sonnet-4-5",
-            "name": "Claude Sonnet 4.5 (5x credits)",
+            "name": "Claude Sonnet 4.5",
             "reasoning": true,
             "input": ["text", "image"],
             "contextWindow": 200000,
@@ -41,9 +28,9 @@
           },
           {
             "id": "claude-opus-4-6",
-            "name": "Claude Opus 4.6 (12x credits)",
+            "name": "Claude Opus 4.6",
             "reasoning": true,
-            "input": ["text", "image", "video"],
+            "input": ["text", "image"],
             "contextWindow": 200000,
             "maxTokens": 16384
           }
@@ -53,41 +40,20 @@
   },
   "agents": {
     "defaults": {
-      "model": "winston/{{SELECTED_MODEL}}",
-      "workspace": "/data/workspace",
-      "memorySearch": {
-        "enabled": true,
-        "experimental": {
-          "sessionMemory": true
-        },
-        "sources": ["memory", "sessions"]
+      "model": {
+        "primary": "winston/kimi-k2.5"
       },
-      "tools": {
-        "profile": "minimal",
-        "allow": ["read", "web_search", "memory_search", "memory_get"],
-        "deny": ["exec", "write", "edit", "browser", "cron", "nodes"]
-      },
-      "messages": {
-        "contextOverflow": {
-          "strategy": "auto-compact",
-          "softThresholdTokens": 60000
-        }
-      }
+      "workspace": "/data/workspace"
     }
   },
   "channels": {
     "telegram": {
-      "enabled": "{{TELEGRAM_ENABLED}}",
-      "botToken": "{{TELEGRAM_BOT_TOKEN}}"
+      "enabled": false,
+      "botToken": ""
     },
     "slack": {
-      "enabled": "{{SLACK_ENABLED}}"
-    },
-    "whatsapp": {
-      "enabled": "{{WHATSAPP_ENABLED}}"
+      "enabled": false
     }
-  },
-  "skills": {
-    "entries": {}
   }
 }
+
