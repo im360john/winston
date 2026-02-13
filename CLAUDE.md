@@ -2,6 +2,8 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+If you're looking for Railway deployment/provisioning details, use `docs/RAILWAY.md` as the current source of truth.
+
 ## Project Overview
 
 Winston is a white-labeled, multi-tenant AI agent platform for SMBs (starting with cannabis dispensaries) built on top of OpenClaw. It provides managed SaaS hosting with onboarding, billing, credit metering, and operational tooling.
@@ -71,8 +73,8 @@ docker/         OpenClaw tenant container image
 # Install dependencies for all packages
 npm install
 
-# Set up database
-psql $DATABASE_URL < packages/api/src/db/schema.sql
+# Set up / migrate database
+DATABASE_URL=postgres://... npm run db:migrate
 
 # Start all services in development
 npm run dev
@@ -168,7 +170,7 @@ This enables:
 
 - `tenants` - org records, credit balances, tier, selected model
 - `tenant_instances` - Railway service mapping, health status, sidecar URL
-- `file_snapshots` - all MD/JSON files with full history (replaces config_snapshots)
+- `file_snapshots` - all MD/JSON files with full history
 - `file_changes` - change log with source tracking (agent/admin/system)
 - `credit_usage` - token consumption audit trail
 - `session_transcripts` - synced from container JSONL, 90-day retention

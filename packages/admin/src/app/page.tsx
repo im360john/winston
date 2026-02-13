@@ -124,9 +124,6 @@ export default function HomePage() {
                       <div className="text-sm font-medium text-gray-900 dark:text-white">
                         {tenant.name}
                       </div>
-                      <div className="text-sm text-gray-500 dark:text-gray-400">
-                        {tenant.slug}
-                      </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                       {tenant.email}

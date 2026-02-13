@@ -2,14 +2,9 @@
 const nextConfig = {
   reactStrictMode: true,
   transpilePackages: [],
-  async rewrites() {
-    return [
-      {
-        source: '/api/:path*',
-        destination: process.env.WINSTON_API_URL || 'http://localhost:3001/api/:path*',
-      },
-    ];
-  },
+  // NOTE: Do not rewrite `/api/*` to Winston API.
+  // This app implements its own Next route handlers under `/api/*` (proxying selectively),
+  // and a blanket rewrite breaks those handlers in production.
 };
 
 module.exports = nextConfig;

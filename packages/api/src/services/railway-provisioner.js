@@ -15,6 +15,18 @@ const RAILWAY_API_URL = 'https://backboard.railway.app/graphql/v2';
 const RAILWAY_API_TOKEN = process.env.RAILWAY_API_TOKEN;
 const RAILWAY_WORKSPACE_ID = process.env.RAILWAY_WORKSPACE_ID || '4a58ce21-7a1d-4a39-b095-dc7e75b1c2b3';
 
+function withTimeout(promise, ms, label) {
+  let timeoutId;
+  const timeout = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => {
+      const err = new Error(label || `Timed out after ${ms}ms`);
+      err.code = 'TIMEOUT';
+      reject(err);
+    }, ms);
+  });
+  return Promise.race([promise.finally(() => clearTimeout(timeoutId)), timeout]);
+}
+
 /**
  * Save configs to file_snapshots table for sidecar access
  */
@@ -109,7 +121,13 @@ async function provisionToRailway(tenant, configs, onProgress = null) {
     // Step 8: Configure OpenClaw via setup API
     const setupPassword = configs.gatewayToken.slice(0, 16);
     try {
-      await configureOpenClaw(url, setupPassword, configs.openclawConfig);
+      // Puppeteer can occasionally hang (browser launch, DNS, websocket, etc.).
+      // Provisioning should still complete and record DB state; allow manual setup if this times out.
+      await withTimeout(
+        configureOpenClaw(url, setupPassword, configs.openclawConfig),
+        90000,
+        'OpenClaw auto-configuration timed out'
+      );
     } catch (error) {
       console.log('[Railway] OpenClaw auto-configuration failed, manual setup required');
       // Don't throw - service is still usable via manual setup
@@ -285,21 +303,24 @@ async function setRootDirectory(projectId, serviceId) {
   // Get environment ID first
   const envId = await getEnvironmentId(projectId);
 
+  // NOTE: serviceInstanceUpdate takes `serviceId` and `environmentId` as top-level args,
+  // and the update payload in `input`. Putting `serviceId/environmentId` inside `input`
+  // causes a Railway GraphQL "Bad Request".
   const mutation = `
-    mutation {
-      serviceInstanceUpdate(
-        input: {
-          serviceId: "${serviceId}",
-          environmentId: "${envId}",
-          rootDirectory: "docker/openclaw-tenant"
-        }
-      )
+    mutation serviceInstanceUpdate($serviceId: String!, $environmentId: String!, $input: ServiceInstanceUpdateInput!) {
+      serviceInstanceUpdate(serviceId: $serviceId, environmentId: $environmentId, input: $input)
     }
   `;
 
   try {
-    await railwayRequest(mutation);
-    console.log('[Railway] Root directory set to: docker/openclaw-tenant');
+    await railwayRequest(mutation, {
+      serviceId,
+      environmentId: envId,
+      // Keep build context at repo root so `railway.json` can point at the tenant Dockerfile
+      // (`docker/openclaw-tenant/Dockerfile`) and COPY paths remain valid.
+      input: { rootDirectory: '.' }
+    });
+    console.log('[Railway] Root directory set to: .');
   } catch (error) {
     console.error('[Railway] Failed to set root directory:', error.message);
     throw error;
@@ -341,16 +362,17 @@ async function connectServiceSource(serviceId) {
  * Create a volume for the service
  */
 async function createVolume(projectId, serviceId) {
+  const envId = await getEnvironmentId(projectId);
+
   const mutation = `
     mutation {
       volumeCreate(input: {
         projectId: "${projectId}",
         serviceId: "${serviceId}",
-        name: "openclaw-data",
+        environmentId: "${envId}",
         mountPath: "/data"
       }) {
         id
-        name
       }
     }
   `;
@@ -534,7 +556,7 @@ async function createPublicDomain(projectId, serviceId) {
   console.log('[Railway] Checking for existing domain...');
   const checkQuery = `
     query {
-      service(id: "${serviceId}") {
+      serviceInstance(serviceId: "${serviceId}", environmentId: "${envId}") {
         domains {
           serviceDomains {
             domain
@@ -546,7 +568,7 @@ async function createPublicDomain(projectId, serviceId) {
 
   try {
     const checkResponse = await railwayRequest(checkQuery);
-    const domains = checkResponse.data.service.domains?.serviceDomains || [];
+    const domains = checkResponse.data.serviceInstance.domains?.serviceDomains || [];
 
     if (domains.length > 0) {
       const domain = domains[0].domain;
@@ -580,7 +602,7 @@ async function createPublicDomain(projectId, serviceId) {
 
     // Creation might have failed but domain exists, check again
     const queryResponse = await railwayRequest(checkQuery);
-    const domains = queryResponse.data.service.domains?.serviceDomains || [];
+    const domains = queryResponse.data.serviceInstance.domains?.serviceDomains || [];
 
     if (domains.length > 0) {
       const domain = domains[0].domain;

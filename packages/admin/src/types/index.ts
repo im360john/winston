@@ -1,15 +1,16 @@
 export interface Tenant {
   id: string;
   name: string;
-  slug: string;
   email: string;
   tier: 'free' | 'starter' | 'growth';
   status: 'active' | 'provisioning' | 'error' | 'inactive';
+  industry?: string | null;
+  sub_industry?: string | null;
+  selected_model?: string;
   created_at: string;
   updated_at: string;
-  railway_service_id?: string;
-  railway_domain?: string;
-  credits_balance?: number;
+  credits_remaining?: string;
+  credits_monthly_allotment?: string;
 }
 
 export interface TenantInstance {
@@ -17,6 +18,7 @@ export interface TenantInstance {
   railway_service_id: string;
   railway_domain: string;
   sidecar_token: string;
+  setup_password?: string;
   status: string;
   health_status?: string;
   last_health_check?: string;
@@ -60,10 +62,11 @@ export interface SessionTranscript {
   tenant_name: string;
   session_id: string;
   channel: string;
-  messages_json: string;
-  message_count: number;
-  credits_used: number;
-  created_at: string;
+  message_count?: number;
+  credits_used?: number;
+  role?: string;
+  content?: string;
+  timestamp?: string;
 }
 
 export interface CreditUsageRecord {
@@ -74,5 +77,5 @@ export interface CreditUsageRecord {
   credits_used: number;
   tokens_input: number;
   tokens_output: number;
-  created_at: string;
+  timestamp?: string;
 }

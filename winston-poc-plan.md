@@ -1,4 +1,11 @@
-# Winston POC Plan
+# Winston POC Plan (Archived)
+
+This document was an early planning artifact (February 11, 2026). It is intentionally kept for historical context but is not the operational source of truth.
+
+For current Railway + provisioning behavior, see:
+- `docs/RAILWAY.md`
+- `CLAUDE.md`
+
 ## AI Agent Platform for SMBs — Built on OpenClaw
 
 **Version:** 1.1

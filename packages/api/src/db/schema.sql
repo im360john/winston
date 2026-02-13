@@ -5,7 +5,7 @@
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
 -- Tenant organizations
-CREATE TABLE tenants (
+CREATE TABLE IF NOT EXISTS tenants (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name VARCHAR(255) NOT NULL,
   email VARCHAR(255) NOT NULL UNIQUE,
@@ -26,32 +26,52 @@ CREATE TABLE tenants (
 );
 
 -- Tenant instances (Railway containers)
-CREATE TABLE tenant_instances (
+CREATE TABLE IF NOT EXISTS tenant_instances (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
   instance_name VARCHAR(255),
   railway_service_id VARCHAR(255),
+  railway_domain VARCHAR(255),
   status VARCHAR(50) NOT NULL DEFAULT 'provisioning',
   config_version VARCHAR(20),
   last_health_check TIMESTAMP,
   health_status VARCHAR(50),
+  sidecar_url VARCHAR(255),
+  sidecar_token VARCHAR(255),
+  setup_password VARCHAR(255),
   created_at TIMESTAMP DEFAULT NOW()
 );
 
--- Config snapshots for versioning and rollback
-CREATE TABLE config_snapshots (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
-  instance_id UUID REFERENCES tenant_instances(id) ON DELETE CASCADE,
-  config_type VARCHAR(50) NOT NULL,
+-- Sidecar file tracking (configs + agent-created content)
+CREATE TABLE IF NOT EXISTS file_snapshots (
+  id BIGSERIAL PRIMARY KEY,
+  tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  file_path VARCHAR(500) NOT NULL,
   content TEXT NOT NULL,
-  version INTEGER NOT NULL,
-  created_by VARCHAR(100),
-  created_at TIMESTAMP DEFAULT NOW()
+  hash VARCHAR(64) NOT NULL,
+  size INTEGER NOT NULL,
+  modified_at TIMESTAMP,
+  source VARCHAR(20) NOT NULL CHECK (source IN ('agent', 'admin', 'system')),
+  captured_at TIMESTAMP DEFAULT NOW()
 );
+
+CREATE INDEX IF NOT EXISTS idx_file_snapshots_tenant_file ON file_snapshots(tenant_id, file_path, captured_at DESC);
+CREATE INDEX IF NOT EXISTS idx_file_snapshots_hash ON file_snapshots(hash);
+CREATE INDEX IF NOT EXISTS idx_file_snapshots_source ON file_snapshots(source, captured_at);
+
+CREATE TABLE IF NOT EXISTS file_changes (
+  id BIGSERIAL PRIMARY KEY,
+  tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  file_path VARCHAR(500) NOT NULL,
+  change_type VARCHAR(20) NOT NULL CHECK (change_type IN ('create', 'update', 'delete')),
+  changed_by VARCHAR(100),
+  changed_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_file_changes_tenant_recent ON file_changes(tenant_id, changed_at DESC);
 
 -- Credit usage log
-CREATE TABLE credit_usage (
+CREATE TABLE IF NOT EXISTS credit_usage (
   id BIGSERIAL PRIMARY KEY,
   tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
   instance_id UUID REFERENCES tenant_instances(id) ON DELETE SET NULL,
@@ -67,7 +87,7 @@ CREATE TABLE credit_usage (
 
 -- Session transcripts (synced from container JSONL)
 -- Retention: 90 days default
-CREATE TABLE session_transcripts (
+CREATE TABLE IF NOT EXISTS session_transcripts (
   id BIGSERIAL PRIMARY KEY,
   tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
   instance_id UUID REFERENCES tenant_instances(id) ON DELETE CASCADE,
@@ -84,7 +104,7 @@ CREATE TABLE session_transcripts (
 );
 
 -- Channel health tracking
-CREATE TABLE channel_health (
+CREATE TABLE IF NOT EXISTS channel_health (
   id BIGSERIAL PRIMARY KEY,
   tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
   instance_id UUID REFERENCES tenant_instances(id) ON DELETE CASCADE,
@@ -96,7 +116,7 @@ CREATE TABLE channel_health (
 );
 
 -- Connector credentials (reference only - actual keys in Railway sealed vars)
-CREATE TABLE tenant_connectors (
+CREATE TABLE IF NOT EXISTS tenant_connectors (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
   connector_type VARCHAR(100) NOT NULL,
@@ -108,7 +128,7 @@ CREATE TABLE tenant_connectors (
 );
 
 -- Audit log
-CREATE TABLE audit_log (
+CREATE TABLE IF NOT EXISTS audit_log (
   id BIGSERIAL PRIMARY KEY,
   tenant_id UUID REFERENCES tenants(id) ON DELETE SET NULL,
   actor VARCHAR(100) NOT NULL,
@@ -119,14 +139,24 @@ CREATE TABLE audit_log (
   timestamp TIMESTAMP DEFAULT NOW()
 );
 
+-- Backfill/upgrade older schemas safely (schema.sql is allowed to be re-run)
+ALTER TABLE tenant_instances ADD COLUMN IF NOT EXISTS railway_domain VARCHAR(255);
+ALTER TABLE tenant_instances ADD COLUMN IF NOT EXISTS sidecar_url VARCHAR(255);
+ALTER TABLE tenant_instances ADD COLUMN IF NOT EXISTS sidecar_token VARCHAR(255);
+ALTER TABLE tenant_instances ADD COLUMN IF NOT EXISTS setup_password VARCHAR(255);
+
+COMMENT ON TABLE file_snapshots IS 'Stores all file versions from tenant containers (configs, SOUL.md, agent-created content, etc.)';
+COMMENT ON TABLE file_changes IS 'Tracks file modification events for sync worker efficiency';
+COMMENT ON COLUMN file_snapshots.source IS 'Who/what created this file: agent (OpenClaw), admin (Winston dashboard), system (provisioner)';
+
 -- Indexes for performance
-CREATE INDEX idx_credit_usage_tenant_time ON credit_usage(tenant_id, timestamp DESC);
-CREATE INDEX idx_session_transcripts_tenant_session ON session_transcripts(tenant_id, session_id);
-CREATE INDEX idx_session_transcripts_timestamp ON session_transcripts(tenant_id, timestamp DESC);
-CREATE INDEX idx_session_transcripts_expires ON session_transcripts(expires_at) WHERE expires_at IS NOT NULL;
-CREATE INDEX idx_audit_log_tenant ON audit_log(tenant_id, timestamp DESC);
-CREATE INDEX idx_channel_health_tenant ON channel_health(tenant_id, channel);
-CREATE INDEX idx_tenant_instances_tenant ON tenant_instances(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_credit_usage_tenant_time ON credit_usage(tenant_id, timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_session_transcripts_tenant_session ON session_transcripts(tenant_id, session_id);
+CREATE INDEX IF NOT EXISTS idx_session_transcripts_timestamp ON session_transcripts(tenant_id, timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_session_transcripts_expires ON session_transcripts(expires_at) WHERE expires_at IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_audit_log_tenant ON audit_log(tenant_id, timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_channel_health_tenant ON channel_health(tenant_id, channel);
+CREATE INDEX IF NOT EXISTS idx_tenant_instances_tenant ON tenant_instances(tenant_id);
 
 -- Updated at trigger function
 CREATE OR REPLACE FUNCTION update_updated_at_column()
@@ -138,11 +168,12 @@ END;
 $$ language 'plpgsql';
 
 -- Apply updated_at trigger to tenants table
+DROP TRIGGER IF EXISTS update_tenants_updated_at ON tenants;
 CREATE TRIGGER update_tenants_updated_at BEFORE UPDATE ON tenants
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- Users table (for authentication)
-CREATE TABLE users (
+CREATE TABLE IF NOT EXISTS users (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   email VARCHAR(255) NOT NULL UNIQUE,
   password_hash VARCHAR(255) NOT NULL,
@@ -152,10 +183,11 @@ CREATE TABLE users (
   updated_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE INDEX idx_users_email ON users(email);
-CREATE INDEX idx_users_tenant ON users(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+CREATE INDEX IF NOT EXISTS idx_users_tenant ON users(tenant_id);
 
 -- Apply updated_at trigger to users table
+DROP TRIGGER IF EXISTS update_users_updated_at ON users;
 CREATE TRIGGER update_users_updated_at BEFORE UPDATE ON users
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 

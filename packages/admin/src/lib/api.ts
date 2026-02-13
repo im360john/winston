@@ -11,12 +11,14 @@ const api = axios.create({
 
 export async function getTenants(): Promise<Tenant[]> {
   const response = await api.get('/tenants');
-  return response.data;
+  // Winston API returns { tenants: [...], count: n }
+  return response.data.tenants || [];
 }
 
 export async function getTenant(id: string): Promise<Tenant> {
   const response = await api.get(`/tenants/${id}`);
-  return response.data;
+  // Winston API returns { tenant: {...} }
+  return response.data.tenant;
 }
 
 export async function getTenantInstance(tenantId: string): Promise<TenantInstance> {
@@ -39,56 +41,43 @@ export async function getCreditUsage(days = 30): Promise<CreditUsageRecord[]> {
 // ============================================================================
 
 export class SidecarClient {
-  private baseUrl: string;
-  private token: string;
+  private tenantId: string;
 
-  constructor(domain: string, token: string) {
-    this.baseUrl = `https://${domain}`;
-    this.token = token;
-  }
-
-  private get headers() {
-    return {
-      'Authorization': `Bearer ${this.token}`,
-      'Content-Type': 'application/json',
-    };
+  constructor(tenantId: string) {
+    this.tenantId = tenantId;
   }
 
   async health(): Promise<HealthStatus> {
-    const response = await axios.get(`${this.baseUrl}/winston/health`);
-    return response.data;
+    const response = await api.get(`/tenants/${this.tenantId}/sidecar/health`);
+    // Normalize to the UI's expected shape.
+    const data = response.data;
+    return {
+      ok: data.status === 'ok' || data.ok === true,
+      service: data.service || 'winston-sidecar',
+      uptime: data.uptime,
+      tenant_id: data.tenant_id,
+      state_dir: data.state_dir,
+    };
   }
 
   async listFiles(path: string = ''): Promise<FileEntry[]> {
-    const response = await axios.get(
-      `${this.baseUrl}/winston/files/${path}`,
-      { headers: this.headers }
-    );
+    const safePath = path ? `/${path}` : '';
+    const response = await api.get(`/tenants/${this.tenantId}/sidecar/files${safePath}`);
     return response.data.files || [];
   }
 
   async readFile(path: string): Promise<FileContent> {
-    const response = await axios.get(
-      `${this.baseUrl}/winston/files/${path}`,
-      { headers: this.headers }
-    );
+    const response = await api.get(`/tenants/${this.tenantId}/sidecar/files/${path}`);
     return response.data;
   }
 
   async writeFile(path: string, content: string): Promise<{ success: boolean; path: string; size: number; hash: string }> {
-    const response = await axios.put(
-      `${this.baseUrl}/winston/files/${path}`,
-      { content },
-      { headers: this.headers }
-    );
+    const response = await api.put(`/tenants/${this.tenantId}/sidecar/files/${path}`, { content });
     return response.data;
   }
 
   async getChanges(): Promise<FileChange[]> {
-    const response = await axios.get(
-      `${this.baseUrl}/winston/changes`,
-      { headers: this.headers }
-    );
+    const response = await api.get(`/tenants/${this.tenantId}/sidecar/changes`);
     return response.data.changes || [];
   }
 }
@@ -98,40 +87,24 @@ export class SidecarClient {
 // ============================================================================
 
 export class SetupClient {
-  private baseUrl: string;
-  private password: string;
+  private tenantId: string;
 
-  constructor(domain: string, password: string) {
-    this.baseUrl = `https://${domain}`;
-    this.password = password;
-  }
-
-  private get auth() {
-    return {
-      username: '',
-      password: this.password,
-    };
+  constructor(tenantId: string) {
+    this.tenantId = tenantId;
   }
 
   async getStatus() {
-    const response = await axios.get(
-      `${this.baseUrl}/setup/api/status`,
-      { auth: this.auth }
-    );
+    const response = await api.get(`/tenants/${this.tenantId}/setup/status`);
     return response.data;
   }
 
   async restartGateway() {
-    const response = await axios.post(
-      `${this.baseUrl}/setup/api/console/run`,
-      { cmd: 'gateway.restart' },
-      { auth: this.auth }
-    );
+    const response = await api.post(`/tenants/${this.tenantId}/setup/restart`, {});
     return response.data;
   }
 
   async getHealth() {
-    const response = await axios.get(`${this.baseUrl}/healthz`);
+    const response = await api.get(`/tenants/${this.tenantId}/setup/healthz`);
     return response.data;
   }
 }
@@ -141,20 +114,10 @@ export class SetupClient {
 // ============================================================================
 
 export async function getSidecarClient(tenantId: string): Promise<SidecarClient> {
-  const instance = await getTenantInstance(tenantId);
-  if (!instance.railway_domain) {
-    throw new Error('Tenant instance has no domain');
-  }
-  return new SidecarClient(instance.railway_domain, instance.sidecar_token);
+  // Sidecar operations are proxied through this admin app to avoid CORS + token leakage.
+  return new SidecarClient(tenantId);
 }
 
 export async function getSetupClient(tenantId: string): Promise<SetupClient> {
-  const instance = await getTenantInstance(tenantId);
-  if (!instance.railway_domain) {
-    throw new Error('Tenant instance has no domain');
-  }
-  // TODO: Get SETUP_PASSWORD from Railway variables
-  // For now, hardcode or fetch from API
-  const setupPassword = '624cf97363d7ae56'; // This should come from Railway API
-  return new SetupClient(instance.railway_domain, setupPassword);
+  return new SetupClient(tenantId);
 }
