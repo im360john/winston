@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const API_URL = process.env.WINSTON_API_URL || 'http://localhost:3001';
+const API_URL = process.env.WINSTON_API_URL || 'https://winston-api-production.up.railway.app';
 
 export async function GET(request: NextRequest) {
   try {
