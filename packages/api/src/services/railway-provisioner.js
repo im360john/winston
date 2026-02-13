@@ -81,6 +81,9 @@ async function provisionToRailway(tenant, configs, onProgress = null) {
       await onProgress({ serviceId, step: 'service_created' });
     }
 
+    // Step 2.5: Set root directory for monorepo builds
+    await setRootDirectory(projectId, serviceId);
+
     // Step 3: Set ALL environment variables in single batch with skipDeploys=true
     // This adds variables without triggering new deployment
     await setEnvironmentVariables(projectId, serviceId, tenant, configs);
@@ -268,9 +271,39 @@ async function createService(projectId, tenant) {
   const serviceId = response.data.serviceCreate.id;
 
   console.log(`[Railway] Created service: ${serviceId} (${serviceName})`);
-  console.log(`[Railway] Deploying from: github.com/im360john/winston/docker/openclaw-tenant`);
-  console.log(`[Railway] Initial deployment triggered from source`);
+  console.log(`[Railway] Deploying from: github.com/im360john/winston`);
+  console.log(`[Railway] railway.json at repo root should configure build`);
   return serviceId;
+}
+
+/**
+ * Set root directory for monorepo builds
+ */
+async function setRootDirectory(projectId, serviceId) {
+  console.log('[Railway] Setting root directory for monorepo build...');
+
+  // Get environment ID first
+  const envId = await getEnvironmentId(projectId);
+
+  const mutation = `
+    mutation {
+      serviceInstanceUpdate(
+        input: {
+          serviceId: "${serviceId}",
+          environmentId: "${envId}",
+          rootDirectory: "docker/openclaw-tenant"
+        }
+      )
+    }
+  `;
+
+  try {
+    await railwayRequest(mutation);
+    console.log('[Railway] Root directory set to: docker/openclaw-tenant');
+  } catch (error) {
+    console.error('[Railway] Failed to set root directory:', error.message);
+    throw error;
+  }
 }
 
 /**
