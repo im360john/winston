@@ -80,3 +80,8 @@ The browser does not talk directly to tenant domains.
 
 This avoids CORS issues and prevents sidecar tokens from being exposed client-side.
 
+## OpenClaw Version Pin
+
+The tenant image builds OpenClaw from source and is pinned via `docker/openclaw-tenant/Dockerfile` (`OPENCLAW_GIT_REF`).
+
+If you change `openclaw.json` via the sidecar, keep it schema-valid for the pinned OpenClaw version. Adding arbitrary keys can make OpenClaw reject the config.
