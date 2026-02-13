@@ -25,7 +25,8 @@ RUN corepack enable
 WORKDIR /openclaw
 
 # Pin to a known-good ref (tag/branch)
-ARG OPENCLAW_GIT_REF=v2026.2.9
+# Keep this aligned with `packages/api/src/templates/openclaw-base.json` schema expectations.
+ARG OPENCLAW_GIT_REF=v2026.2.12
 RUN git clone --depth 1 --branch "${OPENCLAW_GIT_REF}" https://github.com/openclaw/openclaw.git .
 
 # Patch: relax version requirements for packages that may reference unpublished versions
