@@ -183,6 +183,103 @@ function writeFileIfMissing(filePath, content, mode) {
   }
 }
 
+function defaultOpenclawConfig() {
+  // Important: do NOT bake real secrets into the image.
+  // This is a bootstrap config intended to let the gateway start up.
+  return {
+    meta: {
+      lastTouchedVersion: "2026.2.9",
+      lastTouchedAt: new Date().toISOString(),
+    },
+    wizard: {
+      lastRunAt: null,
+      lastRunVersion: null,
+      lastRunCommand: "onboard",
+      lastRunMode: "local",
+    },
+    auth: {
+      profiles: {
+        "moonshot:default": {
+          provider: "moonshot",
+          mode: "api_key",
+        },
+      },
+    },
+    models: {
+      mode: "merge",
+      providers: {
+        moonshot: {
+          baseUrl: "https://api.moonshot.ai/v1",
+          api: "openai-completions",
+          models: [
+            {
+              id: "kimi-k2.5",
+              name: "Kimi K2.5",
+              reasoning: false,
+              input: ["text"],
+              cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+              contextWindow: 256000,
+              maxTokens: 8192,
+            },
+          ],
+        },
+      },
+    },
+    agents: {
+      defaults: {
+        model: { primary: "moonshot/kimi-k2.5" },
+        models: {
+          "moonshot/kimi-k2.5": { alias: "Kimi K2" },
+        },
+        workspace: WORKSPACE_DIR,
+        compaction: { mode: "safeguard" },
+        maxConcurrent: 4,
+        subagents: { maxConcurrent: 8 },
+      },
+    },
+    messages: {
+      ackReactionScope: "group-mentions",
+    },
+    commands: {
+      native: "auto",
+      nativeSkills: "auto",
+      restart: true,
+    },
+    hooks: {
+      enabled: false,
+      path: "/hooks",
+      token: null,
+    },
+    channels: {
+      // Default to disabled. Configure via /setup onboarding or admin edits.
+      whatsapp: { enabled: false },
+      slack: { enabled: false },
+    },
+    gateway: {
+      port: INTERNAL_GATEWAY_PORT,
+      mode: "local",
+      bind: "loopback",
+      controlUi: { allowInsecureAuth: true },
+      auth: {
+        mode: "token",
+        // Make the on-disk config token match what the wrapper uses to start the gateway.
+        token: OPENCLAW_GATEWAY_TOKEN,
+      },
+      tailscale: { mode: "off", resetOnExit: false },
+    },
+    skills: {
+      install: { nodeManager: "npm" },
+    },
+    plugins: {
+      entries: {
+        whatsapp: { enabled: false },
+        imessage: { enabled: false },
+        slack: { enabled: false },
+      },
+    },
+  };
+}
+
 function bootstrapFromEnvBestEffort() {
   // If already configured, do nothing.
   if (isConfigured()) return;
@@ -209,11 +306,41 @@ function bootstrapFromEnvBestEffort() {
     wroteAny = writeFileIfMissing(p, decoded.endsWith("\n") ? decoded : decoded + "\n", m.mode) || wroteAny;
   }
 
+  // If no env-provided seed config exists, create a minimal default so the gateway can start.
+  // This is intentionally non-secret and channel-disabled by default.
+  if (!isConfigured()) {
+    const p = path.join(STATE_DIR, "openclaw.json");
+    const json = JSON.stringify(defaultOpenclawConfig(), null, 2) + "\n";
+    wroteAny = writeFileIfMissing(p, json, 0o600) || wroteAny;
+  }
+
+  // Ensure core MD files exist (even if env vars weren't provided).
+  wroteAny = writeFileIfMissing(
+    path.join(STATE_DIR, "SOUL.md"),
+    "# SOUL\n\nThis is a freshly bootstrapped tenant. Customize me via Winston Admin.\n",
+    0o644,
+  ) || wroteAny;
+  wroteAny = writeFileIfMissing(
+    path.join(STATE_DIR, "AGENTS.md"),
+    "# AGENTS.md\n\n- main: default agent\n",
+    0o644,
+  ) || wroteAny;
+  wroteAny = writeFileIfMissing(
+    path.join(STATE_DIR, "USER.md"),
+    "# USER.md\n\nProvisioned by Winston.\n",
+    0o644,
+  ) || wroteAny;
+  wroteAny = writeFileIfMissing(
+    path.join(STATE_DIR, "IDENTITY.md"),
+    "# IDENTITY.md\n\nName: Winston Tenant Agent\n",
+    0o644,
+  ) || wroteAny;
+
   // Make the state dir less permissive if we created it. Best-effort.
   try { fs.chmodSync(STATE_DIR, 0o700); } catch {}
 
   if (wroteAny) {
-    console.log("[bootstrap] Hydrated initial config/files into state dir from WINSTON_* env vars.");
+    console.log("[bootstrap] Ensured initial config/files exist in state dir.");
   }
 }
 
