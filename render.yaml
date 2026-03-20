@@ -1,0 +1,38 @@
+# Winston Render Blueprint
+# Defines the winston-api web service and its PostgreSQL database.
+# Documentation: https://render.com/docs/blueprint-spec
+
+services:
+  - type: web
+    name: winston-api
+    runtime: node
+    region: oregon
+    plan: free
+    repo: https://github.com/im360john/winston
+    branch: main
+    buildCommand: cd packages/core && npm install --include=dev && npm run build
+    startCommand: node packages/core/dist/server.js
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+      - key: WINSTON_AUDIT_LOG_DIR
+        value: /tmp/winston-audit
+      - key: WINSTON_JWT_SECRET
+        generateValue: true
+      - key: WINSTON_MASTER_KEY
+        generateValue: true
+      - key: WINSTON_DATABASE_URL
+        fromDatabase:
+          name: winston-db
+          property: connectionString
+
+databases:
+  - name: winston-db
+    region: oregon
+    plan: free
+    databaseName: winston
+    user: winston_user
+    postgresMajorVersion: 16
