@@ -5,6 +5,8 @@
  *   - Common types (IPosAdapter, Page, filter params)
  *   - Connection utilities (config, rate limiter, retry)
  *   - TreezAdapter
+ *   - DutchieAdapter
+ *   - BlazeAdapter
  *   - AdapterRegistry for runtime lookup by POS type
  */
 
@@ -17,6 +19,10 @@ export { RateLimiter, withRetry } from './connection';
 // ---- Adapters ------------------------------------------------------------
 export { TreezAdapter } from './treez/adapter';
 export type { TreezClientConfig } from './treez/client';
+export { DutchieAdapter } from './dutchie/adapter';
+export type { DutchieClientConfig } from './dutchie/client';
+export { BlazeAdapter } from './blaze/adapter';
+export type { BlazeClientConfig } from './blaze/client';
 
 // ---- Registry ------------------------------------------------------------
 
@@ -54,4 +60,8 @@ export const adapterRegistry = new AdapterRegistry();
 
 // Register built-in adapters
 import { TreezAdapter } from './treez/adapter';
+import { DutchieAdapter } from './dutchie/adapter';
+import { BlazeAdapter } from './blaze/adapter';
 adapterRegistry.register('treez', TreezAdapter as unknown as AdapterConstructor);
+adapterRegistry.register('dutchie', DutchieAdapter as unknown as AdapterConstructor);
+adapterRegistry.register('blaze', BlazeAdapter as unknown as AdapterConstructor);
